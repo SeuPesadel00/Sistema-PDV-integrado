@@ -1,0 +1,18 @@
+Categoria,Item,Descricao_Modelo_Sugerido,Quantidade,Finalidade,Custo_Medio_Estimado
+Rede_Seguranca,01,Firewall / Roteador Gigabit (MikroTik RB750Gr3 hEX ou RB4011),1,Segmentação de VLANs; QoS; Failover 4G; VPN WireGuard,"R$ 420 - R$ 1.600"
+Rede_Seguranca,02,Switch 16 Portas Gigabit PoE+ Gerenciável L2 (Intelbras SG 1600 PoE ou TP-Link TL-SG1218MPE),1,Alimentação das câmeras IP; separação de portas por VLAN,"R$ 1.100 - R$ 1.800"
+Rede_Seguranca,03,Access Point Wi-Fi Corporativo (Ubiquiti UniFi U6-Lite ou Intelbras AP 1210 AC),1,Wi-Fi seguro para gestão e visitantes com múltiplos SSIDs/VLANs,"R$ 550 - R$ 850"
+Rede_Seguranca,04,Modem 4G LTE USB com porta Ethernet / Roteador 4G de Backup,1,Conexão de contingência para failover de internet,"R$ 250 - R$ 450"
+CFTV_Cameras,05,Câmera IP Dome PoE Full HD / 4MP com sensor Sony Starvis (Intelbras VIP 3230 D ou Hikvision DS-2CD1123G0-I),2,Monitoramento zenital/frontal do balcão e esteira de vendas,"R$ 380 - R$ 550"
+CFTV_Cameras,06,Câmera IP Bullet PoE Full HD externa (Visão geral do salão/estoque e entrada de veículos),2,Monitoramento geral do ambiente e doca de descarga,"R$ 360 - R$ 500"
+CFTV_Cameras,07,Caixa de passagem hermética IP66 para conectores RJ45,4,Acabamento e vedação profissional dos pontos de câmera,R$ 25
+Servidor_PDV,08,Servidor Edge Local: Desktop Mini / Torre (Intel Core i5 12ª/13ª Gen ou Ryzen 5; 32GB RAM; SSD NVMe 1TB; GPU NVIDIA RTX 3060 12GB ou RTX 4060),1,"Processamento de inferência das câmeras em tempo real, Docker, PostgreSQL e backend","R$ 4.500 - R$ 6.200"
+Servidor_PDV,09,Mini PC PDV ou All-in-One para Caixa (Intel Celeron N5105 / i3; 8GB RAM; SSD 128GB),2,Terminais de frente de caixa operando o novo PDV,"R$ 1.200 - R$ 1.800"
+Servidor_PDV,10,Leitor de Código de Barras 2D / QR Code com Suporte (Bematech BR-520 ou Elgin EL5200),2,"Leitura ultra rápida de latas, garrafas e QR codes no caixa","R$ 280 - R$ 450"
+Servidor_PDV,11,Impressora Térmica Não Fiscal 80mm com Guilhotina e conexão USB/Ethernet (Epson TM-T20X ou Elgin I9),2,"Emissão de comprovantes, NFC-e e comandas de separação","R$ 550 - R$ 750"
+Servidor_PDV,12,Nobreak Senoidal Puro 1500VA - 2000VA (SMS Senoidal ou Ragtech),1,Proteção contra surtos e estabilização de energia para servidor e rede,"R$ 1.300 - R$ 2.200"
+Infraestrutura,13,Bobina de Cabo de Rede Cat6 UTP 100% Cobre homologado Anatel (305 metros),1 cx,"Cabeamento estruturado de câmeras, PDVs e servidor","R$ 550 - R$ 750"
+Infraestrutura,14,Conectores RJ45 Macho Cat6 blindados / padrão ouro + capas protetoras,50,"Conectorização dos pontos de rede",R$ 80
+Infraestrutura,15,Mini Rack 19"" 6U ou 9U de Parede com porta de acrílico,1,Acomodação protegida do Switch; Patch Panel; Firewall e Nobreak,"R$ 350 - R$ 550"
+Infraestrutura,16,Patch Panel 24 Portas Cat6 + Patch Cords Cat6 de 0;5m e 1;5m,1 kit,Manobra organizada de cabos no rack,R$ 250
+Infraestrutura,17,Eletrodutos e canaletas tipo Sistema X ou metálicos de sobrepor com tampas,1 lote,Proteção estética e mecânica contra cortes de cabos,R$ 300

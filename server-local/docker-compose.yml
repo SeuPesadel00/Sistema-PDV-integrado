@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # Banco de dados principal da Loja Local
+  postgres:
+    image: postgres:15-alpine
+    container_name: tailandia_db
+    restart: always
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root_password_segura
+      POSTGRES_DB: tailandia_local
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - tailandia_net
+
+  # Cache e Event Bus (Mensageria pub/sub entre Câmeras e PDV)
+  redis:
+    image: redis:7-alpine
+    container_name: tailandia_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    command: redis-server --appendonly yes
+    networks:
+      - tailandia_net
+
+  # Backend da Loja (Fastify / Node.js) - Placeholder
+  api:
+    image: node:20-alpine
+    container_name: tailandia_api
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./api:/app
+    # command: npm run dev
+    command: tail -f /dev/null # Placeholder para manter o container rodando
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgres://root:root_password_segura@postgres:5432/tailandia_local
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - tailandia_net
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  tailandia_net:
+    driver: bridge

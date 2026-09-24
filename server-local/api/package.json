@@ -1,0 +1,16 @@
+{
+  "name": "tailandia-api",
+  "version": "1.0.0",
+  "description": "API Local para a loja Tailândia (Integração PDV, IA e Nuvem)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "fastify": "^4.24.0",
+    "pg": "^8.11.3",
+    "redis": "^4.6.10",
+    "dotenv": "^16.3.1"
+  }
+}

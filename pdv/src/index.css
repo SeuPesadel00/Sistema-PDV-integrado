@@ -1,0 +1,308 @@
+:root {
+  --bg-dark: #0f172a;
+  --bg-panel: #1e293b;
+  --bg-input: #334155;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --accent: #3b82f6;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
+  line-height: 1.5;
+  font-weight: 400;
+  overflow: hidden;
+  user-select: none;
+}
+
+.pos-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  padding: 1rem;
+  gap: 1rem;
+}
+
+/* Painel Esquerdo: Carrinho e Produtos */
+.pos-left {
+  flex: 3;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-panel);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  overflow: hidden;
+}
+
+.pos-header {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--bg-input);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pos-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.cashier-info {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.cart-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.cart-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+  background-color: var(--bg-input);
+  border-radius: 8px;
+  font-size: 1.125rem;
+}
+
+.cart-item-desc {
+  flex: 2;
+  font-weight: 500;
+}
+.cart-item-qty {
+  flex: 1;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.cart-item-price {
+  flex: 1;
+  text-align: right;
+  font-weight: 700;
+  color: var(--success);
+}
+
+/* Painel Direito: Subtotal e Controles */
+.pos-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.totals-panel {
+  background-color: var(--bg-panel);
+  padding: 1.5rem;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+}
+
+.grand-total {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: var(--success);
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 2px dashed var(--bg-input);
+}
+
+.input-panel {
+  background-color: var(--bg-panel);
+  padding: 1.5rem;
+  border-radius: 12px;
+  flex: 1;
+}
+
+.barcode-input {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.5rem;
+  background-color: var(--bg-input);
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  color: white;
+  outline: none;
+  font-family: monospace;
+}
+
+.barcode-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.shortcuts-panel {
+  margin-top: 2rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.shortcut-btn {
+  background-color: var(--bg-input);
+  border: none;
+  color: var(--text-primary);
+  padding: 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+}
+
+.shortcut-btn:hover {
+  background-color: var(--accent);
+}
+
+.shortcut-btn span {
+  color: var(--warning);
+}
+
+/* Utilities */
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: rgba(16, 185, 129, 0.2);
+  color: var(--success);
+}
+
+/* Modal PIX */
+.pix-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.pix-modal {
+  background-color: var(--bg-panel);
+  padding: 3rem;
+  border-radius: 16px;
+  text-align: center;
+  min-width: 400px;
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.5);
+  border: 1px solid var(--bg-input);
+}
+
+.pix-modal h2 {
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+.pix-qr-container {
+  background-color: white;
+  padding: 1rem;
+  border-radius: 12px;
+  display: inline-block;
+  margin: 2rem 0;
+}
+
+.pix-qr-container img {
+  display: block;
+}
+
+.pix-value {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: var(--success);
+}
+
+.pix-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.btn-cancel, .btn-success {
+  flex: 1;
+  padding: 1rem;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.btn-cancel {
+  background-color: transparent;
+  border: 2px solid var(--text-secondary);
+  color: var(--text-secondary);
+}
+
+.btn-success {
+  background-color: var(--success);
+  color: white;
+}
+
+/* RECIBO TÉRMICO OCULTO (PRINT MEDIA) */
+.print-receipt {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 0;
+    /* Evita que a impressora puxe folha A4 e corta a bobina logo após o texto */
+  }
+
+  html, body, .pos-container {
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    margin: 0;
+    padding: 0;
+    background: white;
+  }
+
+  body * {
+    visibility: hidden; /* Esconde o PDV escuro inteiro */
+  }
+  
+  .print-receipt, .print-receipt * {
+    visibility: visible;
+  }
+  
+  .print-receipt {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm; /* Tamanho exato da bobina térmica padrão */
+    padding: 4mm;
+    background-color: white;
+    color: black;
+    font-family: monospace; /* Fonte típica de cupom */
+    height: auto;
+  }
+}

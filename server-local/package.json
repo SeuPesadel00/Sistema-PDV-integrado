@@ -1,0 +1,17 @@
+{
+  "name": "tailandia-api",
+  "version": "1.0.0",
+  "description": "API Backend do PDV Tailândia",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^8.4.1",
+    "bcryptjs": "^3.0.3",
+    "fastify": "^4.24.3",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.11.3"
+  }
+}
