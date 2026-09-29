@@ -26,9 +26,9 @@ await fastify.register(cors, {
 const pool = new Pool({
   user: 'postgres',
   host: '127.0.0.1',
-  database: 'tailandia_local',
-  password: '', // Em produção usaríamos senha
-  port: 5432,
+  database: 'Tailandia_db',
+  password: 'Tailandia@2026', 
+  port: 6666,
 })
 
 // Força UTF-8 em toda nova conexão (resolve incompatibilidade WIN1252 no Windows)

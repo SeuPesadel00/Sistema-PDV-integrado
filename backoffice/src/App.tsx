@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Package, LayoutDashboard, LogOut, Receipt } from 'lucide-react';
 
-const API = 'http://localhost:3000';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const theme = {
   bgMain: '#111827', // Fundo escuro igual ao PDV
