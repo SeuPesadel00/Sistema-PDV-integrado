@@ -10,7 +10,8 @@ export default function App() {
   const [cardType, setCardType] = useState('CREDITO'); // CREDITO ou DEBITO
   const [showCloseRegister, setShowCloseRegister] = useState(false);
   const [cpfCnpj, setCpfCnpj] = useState("");
-  const [lastReceipt, setLastReceipt] = useState<{itens: CartItem[], total: number, date: string, cpfCnpj: string, metodoPagamento: string} | null>(null);
+  const [isEmitting, setIsEmitting] = useState(false);
+  const [lastReceipt, setLastReceipt] = useState<{itens: CartItem[], total: number, date: string, cpfCnpj: string, metodoPagamento: string, chave_acesso?: string} | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // MÓDULO DE SEGURANÇA E PERSISTÊNCIA DE SESSÃO
@@ -55,7 +56,11 @@ export default function App() {
   useEffect(() => {
     if (isAuthenticated && !showPix && !showCard && !showCloseRegister) {
       inputRef.current?.focus();
-      const handleGlobalClick = () => inputRef.current?.focus();
+      const handleGlobalClick = (e: MouseEvent) => {
+        if ((e.target as HTMLElement).tagName !== 'INPUT') {
+          inputRef.current?.focus();
+        }
+      };
       window.addEventListener("click", handleGlobalClick);
       return () => window.removeEventListener("click", handleGlobalClick);
     }
@@ -248,14 +253,24 @@ export default function App() {
                   
                   if (checkTokenStatus(resDb.status)) return;
                   if (!resDb.ok) throw new Error("Falha no Banco");
+                  const dataVenda = await resDb.json();
                   
-                  if (window.confirm("Venda PIX finalizada com sucesso!\nDeseja imprimir a via do cliente (Cupom)?")) {
-                    setLastReceipt({ itens: cart, total: subtotal, date: new Date().toLocaleString('pt-BR'), cpfCnpj, metodoPagamento: 'PIX' });
+                  setIsEmitting(true);
+                  const resFiscal = await fetch('http://localhost:3000/fiscal/emitir-nfce', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, 
+                    body: JSON.stringify({ venda_id: dataVenda.id_venda }) 
+                  });
+                  const dataFiscal = await resFiscal.json();
+                  setIsEmitting(false);
+                  
+                  if (window.confirm("Venda PIX finalizada e Autorizada pela SEFAZ!\nDeseja imprimir a via do cliente (Cupom)?")) {
+                    setLastReceipt({ itens: cart, total: subtotal, date: new Date().toLocaleString('pt-BR'), cpfCnpj, metodoPagamento: 'PIX', chave_acesso: dataFiscal.chave_acesso });
                     setTimeout(() => window.print(), 100);
                   }
                   
                   setCart([]); setCpfCnpj(""); setShowPix(false);
-                } catch(e) { alert("Erro ao registrar venda!"); }
+                } catch(e) { setIsEmitting(false); alert("Erro ao registrar venda!"); }
               }}>Simular Pagamento</button>
             </div>
           </div>
@@ -291,14 +306,24 @@ export default function App() {
                   
                   if (checkTokenStatus(resDb.status)) return;
                   if (!resDb.ok) throw new Error("Falha no Banco");
+                  const dataVenda = await resDb.json();
                   
-                  if (window.confirm(`CARTÃO APROVADO! Venda via ${cardType === 'CARTAO_CREDITO' ? 'Crédito' : 'Débito'}\nDeseja imprimir a via do cliente (Cupom)?`)) {
-                    setLastReceipt({ itens: cart, total: subtotal, date: new Date().toLocaleString('pt-BR'), cpfCnpj, metodoPagamento: cardType });
+                  setIsEmitting(true);
+                  const resFiscal = await fetch('http://localhost:3000/fiscal/emitir-nfce', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, 
+                    body: JSON.stringify({ venda_id: dataVenda.id_venda }) 
+                  });
+                  const dataFiscal = await resFiscal.json();
+                  setIsEmitting(false);
+                  
+                  if (window.confirm(`CARTÃO APROVADO! Venda via ${cardType === 'CARTAO_CREDITO' ? 'Crédito' : 'Débito'}\nNFC-e Autorizada. Deseja imprimir a via do cliente?`)) {
+                    setLastReceipt({ itens: cart, total: subtotal, date: new Date().toLocaleString('pt-BR'), cpfCnpj, metodoPagamento: cardType, chave_acesso: dataFiscal.chave_acesso });
                     setTimeout(() => window.print(), 100);
                   }
                   
                   setCart([]); setCpfCnpj(""); setShowCard(false);
-                } catch(e) { alert("Erro ao registrar venda!"); }
+                } catch(e) { setIsEmitting(false); alert("Erro ao registrar venda!"); }
               }}>Simular Aprovação</button>
             </div>
           </div>
@@ -312,10 +337,18 @@ export default function App() {
             <h3 style={{ margin: 0 }}>TAILÂNDIA DISTRIBUIDORA</h3>
             <p style={{ fontSize: '12px', margin: 0 }}>CNPJ: 00.000.000/0001-00</p>
             <p style={{ fontSize: '12px', margin: 0 }}>Extrato No. 012345</p>
-            <p style={{ fontSize: '12px', margin: 0, fontWeight: 'bold' }}>CUPOM FISCAL ELETRÔNICO - SAT</p>
+            <p style={{ fontSize: '12px', margin: 0 }}>CUPOM FISCAL ELETRÔNICO - SAT</p>
             <p style={{ fontSize: '12px', margin: 0 }}>--------------------------------</p>
             <p style={{ fontSize: '12px', margin: 0 }}>Data: {lastReceipt.date}</p>
             {lastReceipt.cpfCnpj && <p style={{ fontSize: '12px', margin: 0, fontWeight: 'bold' }}>CPF/CNPJ Consumidor: {lastReceipt.cpfCnpj}</p>}
+            {lastReceipt.chave_acesso && (
+              <div style={{ marginTop: '5px' }}>
+                <p style={{ fontSize: '10px', margin: 0, color: '#333' }}>CHAVE DE ACESSO</p>
+                <p style={{ fontSize: '10px', margin: 0, wordWrap: 'break-word' }}>
+                  {lastReceipt.chave_acesso.match(/.{1,4}/g)?.join(' ')}
+                </p>
+              </div>
+            )}
           </div>
           <p style={{ fontSize: '12px', margin: 0 }}>--------------------------------</p>
           <div style={{ fontSize: '12px' }}>
@@ -353,6 +386,16 @@ export default function App() {
               <p style={{ fontSize: '12px', margin: '10px 0' }}>Via do Cliente</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* OVERLAY DE PROCESSAMENTO FISCAL */}
+      {isEmitting && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+          <div style={{ border: '4px solid #f3f3f3', borderTop: '4px solid var(--accent)', borderRadius: '50%', width: '50px', height: '50px', animation: 'spin 1s linear infinite', marginBottom: '20px' }} />
+          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+          <h2 style={{ color: 'var(--accent)', marginBottom: '10px' }}>Transmitindo NFC-e...</h2>
+          <p style={{ color: 'var(--text-secondary)' }}>Aguardando autorização da SEFAZ</p>
         </div>
       )}
 

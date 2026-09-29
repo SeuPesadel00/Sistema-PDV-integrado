@@ -116,13 +116,31 @@ export default function App() {
 
   const carregarDados = async () => {
     const token = localStorage.getItem('adm_token');
+    if (!token) return;
     const headers = { 'Authorization': `Bearer ${token}` };
-    fetch(`${API}/admin/produtos`, { headers }).then(r => r.json()).then(d => Array.isArray(d) && setProdutos(d)).catch(()=>{});
-    fetch(`${API}/admin/funcionarios`, { headers }).then(r => r.json()).then(d => Array.isArray(d) && setFuncionarios(d)).catch(()=>{});
-    fetch(`${API}/admin/vendas`, { headers }).then(r => r.json()).then(d => Array.isArray(d) && setVendas(d)).catch(()=>{});
+    try {
+      const resP = await fetch(`${API}/admin/produtos`, { headers });
+      if (resP.status === 401) { handleLogout(); return; }
+      
+      const [dP, dF, dV] = await Promise.all([
+        resP.json(),
+        fetch(`${API}/admin/funcionarios`, { headers }).then(r => r.json()),
+        fetch(`${API}/admin/vendas`, { headers }).then(r => r.json())
+      ]);
+      
+      if (Array.isArray(dP)) setProdutos(dP);
+      if (Array.isArray(dF)) setFuncionarios(dF);
+      if (Array.isArray(dV)) setVendas(dV);
+    } catch(e) {}
   };
 
-  useEffect(() => { if (adminName) carregarDados(); }, [adminName]);
+  useEffect(() => { 
+    if (adminName) {
+      carregarDados();
+      const interval = setInterval(carregarDados, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [adminName]);
 
   const handleLogin = (nome: string) => {
     localStorage.setItem('adm_operatorName', nome);
@@ -156,7 +174,7 @@ export default function App() {
             { id: 'dashboard', label: 'Painel Geral', icon: <LayoutDashboard size={20} /> },
             { id: 'vendas', label: 'Histórico de Vendas', icon: <Receipt size={20} /> },
             { id: 'produtos', label: 'Produtos e Estoque', icon: <Package size={20} /> },
-            { id: 'funcionarios', label: 'Funcionários', icon: <Users size={20} /> },
+            { id: 'funcionarios', label: 'Equipe / Funcionarios', icon: <Users size={20} /> },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
               display: 'flex', alignItems: 'center', gap: '15px', border: 'none', width: '100%',

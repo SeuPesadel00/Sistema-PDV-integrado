@@ -228,17 +228,17 @@ fastify.get('/produtos/:ean', async (request, reply) => {
 
 // Rota 2: Registrar a Venda Finalizada e Abater Estoque
 fastify.post('/vendas', async (request, reply) => {
-  const { itens, total, metodo_pagamento } = request.body
+  const { itens, total, metodo_pagamento, cpfCnpj } = request.body
   const client = await pool.connect()
   
   try {
     // Inicia uma Transação (Se algo der errado, ele desfaz tudo para não corromper o estoque)
     await client.query('BEGIN')
     
-    // 1. Salva o cabeçalho da Venda
+    // 1. Salva o cabeçalho da Venda (Agora gravando o CPF na Nota)
     const resVenda = await client.query(
-      'INSERT INTO vendas (total, metodo_pagamento) VALUES ($1, $2) RETURNING id',
-      [total, metodo_pagamento]
+      'INSERT INTO vendas (total, metodo_pagamento, cpf_cnpj_cliente, status_nfe) VALUES ($1, $2, $3, $4) RETURNING id',
+      [total, metodo_pagamento, cpfCnpj || null, 'NAO_EMITIDA']
     )
     const vendaId = resVenda.rows[0].id
     
@@ -267,6 +267,60 @@ fastify.post('/vendas', async (request, reply) => {
     return reply.status(500).send({ error: 'Erro ao registrar a venda no banco' })
   } finally {
     client.release()
+  }
+})
+
+// ===================================================================
+// ROTA FISCAL: EMISSÃO DE NFC-e (Simulação ACBr / Nuvem Fiscal)
+// ===================================================================
+fastify.post('/fiscal/emitir-nfce', async (request, reply) => {
+  const { venda_id } = request.body;
+  const client = await pool.connect();
+  
+  try {
+    // 1. Busca os dados completos da venda no banco
+    const resVenda = await client.query('SELECT * FROM vendas WHERE id = $1', [venda_id]);
+    if (resVenda.rows.length === 0) return reply.status(404).send({ error: 'Venda não encontrada' });
+    const venda = resVenda.rows[0];
+
+    if (venda.status_nfe === 'AUTORIZADA') {
+      return reply.status(400).send({ error: 'NFC-e já foi autorizada para esta venda.' });
+    }
+
+    // Aqui enviaríamos o JSON do Produto/Cliente/Impostos para a Nuvem Fiscal ou ACBr.
+    // Como estamos desenhando a estrutura, vamos SIMULAR o retorno de SUCESSO:
+    
+    await new Promise(resolve => setTimeout(resolve, 800)); // Simula delay da SEFAZ
+    
+    const chave_acesso = '352609' + '00000000000100' + '65' + '001' + String(venda.id).padStart(9, '0') + '1' + '12345678' + '0';
+    const protocolo = '135' + String(Date.now()).slice(0, 12);
+    
+    // Atualiza o banco com a Chave e Autorização
+    await client.query(
+      'UPDATE vendas SET status_nfe = $1, chave_nfe = $2, protocolo_nfe = $3 WHERE id = $4',
+      ['AUTORIZADA', chave_acesso, protocolo, venda.id]
+    );
+    
+    // Grava no Log Fiscal
+    await client.query(
+      'INSERT INTO notas_fiscais_logs (venda_id, status, mensagem, retorno_sefaz) VALUES ($1, $2, $3, $4)',
+      [venda.id, 'AUTORIZADO_SEFAZ', 'Lote Autorizado com Sucesso', 'cStat: 100 - Autorizado o uso da NFC-e']
+    );
+
+    console.log(`[FISCAL] NFC-e Emitida com Sucesso! Venda #${venda.id} - Chave: ${chave_acesso}`);
+
+    return { 
+      sucesso: true, 
+      status: 'Autorizado o uso da NFC-e',
+      chave_acesso,
+      protocolo,
+      url_qr_code: `https://www.sefaz.rs.gov.br/NFCE/NFCE-COM.aspx?p=${chave_acesso}|2|1|1`
+    };
+  } catch (err) {
+    fastify.log.error(err);
+    return reply.status(500).send({ error: 'Erro de Comunicação com SEFAZ' });
+  } finally {
+    client.release();
   }
 })
 
