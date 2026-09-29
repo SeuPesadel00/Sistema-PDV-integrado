@@ -43,6 +43,7 @@ function LoginScreen({ onLogin }: { onLogin: (nome: string) => void }) {
       if (!res.ok) { setErro('Acesso Negado: Matrícula ou senha incorretos!'); return; }
       const data = await res.json();
       if (data.nivel !== 'ADMIN') { setErro('Acesso Negado: Você não tem permissão de Administrador.'); return; }
+      localStorage.setItem('adm_token', data.token);
       onLogin(data.nome);
     } catch { setErro('Erro crítico: Servidor Banco de Dados Offline.'); }
   };
@@ -76,8 +77,9 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
   
   const handleSave = async () => {
     if (!ean || !nome || !precoVenda || !estoque) return alert('Preencha os campos obrigatórios');
+    const token = localStorage.getItem('adm_token');
     await fetch(produto ? `${API}/admin/produtos/${produto.id}` : `${API}/admin/produtos`, {
-      method: produto ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
+      method: produto ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ ean, nome, preco_custo: Number(precoCusto)||0, preco_venda: Number(precoVenda), estoque_atual: Number(estoque) })
     });
     onSaved(); onClose();
@@ -113,9 +115,11 @@ export default function App() {
   const [modalProduto, setModalProduto] = useState<any>({ open: false, data: null });
 
   const carregarDados = async () => {
-    fetch(`${API}/admin/produtos`).then(r => r.json()).then(d => Array.isArray(d) && setProdutos(d)).catch(()=>{});
-    fetch(`${API}/admin/funcionarios`).then(r => r.json()).then(d => Array.isArray(d) && setFuncionarios(d)).catch(()=>{});
-    fetch(`${API}/admin/vendas`).then(r => r.json()).then(d => Array.isArray(d) && setVendas(d)).catch(()=>{});
+    const token = localStorage.getItem('adm_token');
+    const headers = { 'Authorization': `Bearer ${token}` };
+    fetch(`${API}/admin/produtos`, { headers }).then(r => r.json()).then(d => Array.isArray(d) && setProdutos(d)).catch(()=>{});
+    fetch(`${API}/admin/funcionarios`, { headers }).then(r => r.json()).then(d => Array.isArray(d) && setFuncionarios(d)).catch(()=>{});
+    fetch(`${API}/admin/vendas`, { headers }).then(r => r.json()).then(d => Array.isArray(d) && setVendas(d)).catch(()=>{});
   };
 
   useEffect(() => { if (adminName) carregarDados(); }, [adminName]);
@@ -127,6 +131,7 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('adm_operatorName');
+    localStorage.removeItem('adm_token');
     setAdminName(null);
   };
 

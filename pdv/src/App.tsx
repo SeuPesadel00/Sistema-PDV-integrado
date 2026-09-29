@@ -9,6 +9,8 @@ export default function App() {
   const [showCard, setShowCard] = useState(false);
   const [cardType, setCardType] = useState('CREDITO'); // CREDITO ou DEBITO
   const [showCloseRegister, setShowCloseRegister] = useState(false);
+  const [cpfCnpj, setCpfCnpj] = useState("");
+  const [lastReceipt, setLastReceipt] = useState<{itens: CartItem[], total: number, date: string, cpfCnpj: string, metodoPagamento: string} | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // MÓDULO DE SEGURANÇA E PERSISTÊNCIA DE SESSÃO
@@ -27,16 +29,27 @@ export default function App() {
         const data = await res.json();
         setOperatorName(data.nome);
         setIsAuthenticated(true);
-        localStorage.setItem('pdv_operatorName', data.nome); // Persiste o login!
+        localStorage.setItem('pdv_operatorName', data.nome);
+        localStorage.setItem('pdv_token', data.token); // Persiste o JWT
       } else { alert("Acesso Negado: Matrícula ou senha incorretos!"); }
     } catch (err) { alert("Erro crítico: Servidor Banco de Dados Offline."); }
   };
 
   const handleCloseRegister = () => {
     localStorage.removeItem('pdv_operatorName');
+    localStorage.removeItem('pdv_token');
     setIsAuthenticated(false);
     setOperatorName("");
     setShowCloseRegister(false);
+  };
+  
+  const checkTokenStatus = (resStatus: number) => {
+    if (resStatus === 401 || resStatus === 403) {
+      alert("⚠️ Sua sessão expirou por inatividade (ou por atualização de segurança)!\n\nPor favor, faça login novamente no PDV para continuar vendendo.");
+      handleCloseRegister();
+      return true;
+    }
+    return false;
   };
 
   useEffect(() => {
@@ -74,7 +87,13 @@ export default function App() {
       if (!code) return;
 
       try {
-        const response = await fetch(`http://localhost:3000/produtos/${code}`);
+        const token = localStorage.getItem('pdv_token');
+        const response = await fetch(`http://localhost:3000/produtos/${code}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (checkTokenStatus(response.status)) return;
+        
         let product = { name: `Produto Genérico (${code})`, price: 9.99 };
         if (response.ok) {
           const dbProduct = await response.json();
@@ -134,12 +153,17 @@ export default function App() {
           <label style={{ display: "block", marginBottom: "0.5rem", color: "var(--text-secondary)" }}>Código de Barras / EAN</label>
           <input ref={inputRef} type="text" className="barcode-input" placeholder="Bipar o produto..." value={barcode} onChange={(e) => setBarcode(e.target.value)} onKeyDown={handleScan} />
 
+          <div style={{ marginTop: '1rem' }}>
+            <label style={{ display: "block", marginBottom: "0.5rem", color: "var(--text-secondary)" }}>CPF/CNPJ do Cliente na Nota (Opcional)</label>
+            <input type="text" className="barcode-input" style={{ fontSize: '1.2rem', padding: '0.75rem' }} placeholder="Apenas números..." value={cpfCnpj} onChange={(e) => setCpfCnpj(e.target.value)} />
+          </div>
+
           <div className="shortcuts-panel">
             <button className="shortcut-btn" onClick={() => setCart([])}>Cancelar Item <span>[ F4 ]</span></button>
-            <button className="shortcut-btn" style={{ backgroundColor: "var(--accent)", color: "white" }} onClick={() => cart.length > 0 && setShowPix(true)}>Pagamento Pix <span>[ F2 ]</span></button>
-            <button className="shortcut-btn" style={{ backgroundColor: "#eab308", color: "white" }} onClick={() => cart.length > 0 && setShowCard(true)}>Pagamento Cartão <span>[ F6 ]</span></button>
-            <button className="shortcut-btn" style={{ backgroundColor: "var(--success)", color: "white" }}>Pagamento Dinheiro <span>[ F3 ]</span></button>
-            <button className="shortcut-btn" style={{ backgroundColor: "#2d3748", color: "white", gridColumn: "span 2" }} onClick={() => setShowCloseRegister(true)}>Fechar Caixa <span>[ F5 ]</span></button>
+            <button className="shortcut-btn" onClick={() => cart.length > 0 && setShowPix(true)}>Pagamento Pix <span>[ F2 ]</span></button>
+            <button className="shortcut-btn" onClick={() => cart.length > 0 && setShowCard(true)}>Pagamento Cartão <span>[ F6 ]</span></button>
+            <button className="shortcut-btn">Pagamento Dinheiro <span>[ F3 ]</span></button>
+            <button className="shortcut-btn" style={{ gridColumn: "span 2" }} onClick={() => setShowCloseRegister(true)}>Fechar Caixa <span>[ F5 ]</span></button>
           </div>
         </div>
       </div>
@@ -208,13 +232,29 @@ export default function App() {
           <div className="pix-modal">
             <h2>PAGAMENTO VIA PIX</h2>
             <div className="pix-value">R$ {subtotal.toFixed(2)}</div>
+            <div style={{ margin: '15px 0', padding: '10px', backgroundColor: 'white', borderRadius: '8px', display: 'inline-block' }}>
+               <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=00020101021226580014br.gov.bcb.pix0136123e4567-e12b-12d1-a456-4266554400005204000053039865405${subtotal.toFixed(2)}5802BR5913Tailandia%20Distribuidora6008BRASILIA62070503***6304`} alt="QR Code PIX" style={{ width: '150px', height: '150px' }} />
+            </div>
             <div className="pix-actions">
               <button className="btn-cancel" onClick={() => setShowPix(false)}>Cancelar (Esc)</button>
               <button className="btn-success" onClick={async () => {
                 try {
-                  const resDb = await fetch('http://localhost:3000/vendas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itens: cart, total: subtotal, metodo_pagamento: 'PIX' }) });
+                  const token = localStorage.getItem('pdv_token');
+                  const resDb = await fetch('http://localhost:3000/vendas', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, 
+                    body: JSON.stringify({ itens: cart, total: subtotal, metodo_pagamento: 'PIX' }) 
+                  });
+                  
+                  if (checkTokenStatus(resDb.status)) return;
                   if (!resDb.ok) throw new Error("Falha no Banco");
-                  setCart([]); setShowPix(false);
+                  
+                  if (window.confirm("Venda PIX finalizada com sucesso!\nDeseja imprimir a via do cliente (Cupom)?")) {
+                    setLastReceipt({ itens: cart, total: subtotal, date: new Date().toLocaleString('pt-BR'), cpfCnpj, metodoPagamento: 'PIX' });
+                    setTimeout(() => window.print(), 100);
+                  }
+                  
+                  setCart([]); setCpfCnpj(""); setShowPix(false);
                 } catch(e) { alert("Erro ao registrar venda!"); }
               }}>Simular Pagamento</button>
             </div>
@@ -242,14 +282,77 @@ export default function App() {
               <button className="btn-cancel" onClick={() => setShowCard(false)}>Cancelar (Esc)</button>
               <button className="btn-success" style={{ backgroundColor: '#eab308' }} onClick={async () => {
                 try {
-                  const resDb = await fetch('http://localhost:3000/vendas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itens: cart, total: subtotal, metodo_pagamento: cardType }) });
+                  const token = localStorage.getItem('pdv_token');
+                  const resDb = await fetch('http://localhost:3000/vendas', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, 
+                    body: JSON.stringify({ itens: cart, total: subtotal, metodo_pagamento: cardType }) 
+                  });
+                  
+                  if (checkTokenStatus(resDb.status)) return;
                   if (!resDb.ok) throw new Error("Falha no Banco");
-                  alert(`CARTÃO APROVADO! Venda via ${cardType === 'CARTAO_CREDITO' ? 'Crédito' : 'Débito'}`);
-                  setCart([]); setShowCard(false);
+                  
+                  if (window.confirm(`CARTÃO APROVADO! Venda via ${cardType === 'CARTAO_CREDITO' ? 'Crédito' : 'Débito'}\nDeseja imprimir a via do cliente (Cupom)?`)) {
+                    setLastReceipt({ itens: cart, total: subtotal, date: new Date().toLocaleString('pt-BR'), cpfCnpj, metodoPagamento: cardType });
+                    setTimeout(() => window.print(), 100);
+                  }
+                  
+                  setCart([]); setCpfCnpj(""); setShowCard(false);
                 } catch(e) { alert("Erro ao registrar venda!"); }
               }}>Simular Aprovação</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* IMPRESSÃO DO CUPOM TÉRMICO */}
+      {lastReceipt && (
+        <div className="print-receipt">
+          <div style={{ textAlign: 'center', marginBottom: '10px' }}>
+            <h3 style={{ margin: 0 }}>TAILÂNDIA DISTRIBUIDORA</h3>
+            <p style={{ fontSize: '12px', margin: 0 }}>CNPJ: 00.000.000/0001-00</p>
+            <p style={{ fontSize: '12px', margin: 0 }}>Extrato No. 012345</p>
+            <p style={{ fontSize: '12px', margin: 0, fontWeight: 'bold' }}>CUPOM FISCAL ELETRÔNICO - SAT</p>
+            <p style={{ fontSize: '12px', margin: 0 }}>--------------------------------</p>
+            <p style={{ fontSize: '12px', margin: 0 }}>Data: {lastReceipt.date}</p>
+            {lastReceipt.cpfCnpj && <p style={{ fontSize: '12px', margin: 0, fontWeight: 'bold' }}>CPF/CNPJ Consumidor: {lastReceipt.cpfCnpj}</p>}
+          </div>
+          <p style={{ fontSize: '12px', margin: 0 }}>--------------------------------</p>
+          <div style={{ fontSize: '12px' }}>
+            {lastReceipt.itens.map((item, idx) => (
+              <div key={idx} style={{ marginBottom: '5px' }}>
+                <div>{item.ean} - {item.name}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{item.quantity} un X {item.unitPrice.toFixed(2)}</span>
+                  <span>R$ {(item.quantity * item.unitPrice).toFixed(2)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: '12px', margin: 0 }}>--------------------------------</p>
+          <div style={{ fontSize: '16px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', margin: '10px 0' }}>
+            <span>TOTAL R$</span>
+            <span>{lastReceipt.total.toFixed(2)}</span>
+          </div>
+          <p style={{ fontSize: '12px', margin: 0 }}>--------------------------------</p>
+          <p style={{ fontSize: '12px', textAlign: 'center', marginTop: '10px' }}>Consulte o QR Code pelo aplicativo</p>
+          <p style={{ fontSize: '10px', textAlign: 'center', marginTop: '5px' }}>Sistema PDV Integrado</p>
+
+          {/* VIA DO CLIENTE (CARTÃO TEF) */}
+          {(lastReceipt.metodoPagamento === 'CARTAO_CREDITO' || lastReceipt.metodoPagamento === 'CARTAO_DEBITO') && (
+            <div style={{ marginTop: '25px', borderTop: '1px dashed black', paddingTop: '20px', textAlign: 'center' }}>
+              <h3 style={{ margin: 0 }}>COMPROVANTE TEF</h3>
+              <p style={{ fontSize: '12px', margin: 0 }}>TAILÂNDIA DISTRIBUIDORA</p>
+              <p style={{ fontSize: '12px', margin: 0 }}>REDE - {lastReceipt.metodoPagamento === 'CARTAO_CREDITO' ? 'CRÉDITO' : 'DÉBITO'}</p>
+              <p style={{ fontSize: '12px', margin: 0 }}>--------------------------------</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                 <span>VALOR:</span>
+                 <span>R$ {lastReceipt.total.toFixed(2)}</span>
+              </div>
+              <p style={{ fontSize: '12px', margin: 0 }}>--------------------------------</p>
+              <p style={{ fontSize: '12px', margin: '10px 0' }}>Via do Cliente</p>
+            </div>
+          )}
         </div>
       )}
 

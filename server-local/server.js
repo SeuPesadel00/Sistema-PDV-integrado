@@ -1,17 +1,25 @@
+import 'dotenv/config'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import pg from 'pg'
 import jwt from 'jsonwebtoken'
+import bcrypt from 'bcryptjs'
+import rateLimit from '@fastify/rate-limit'
 
-const JWT_SECRET = 'tailandia_super_secret_key_2026'
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback_inseguro'
 
 const { Pool } = pg
 
 const fastify = Fastify({ logger: true })
 
-// Permite que o PDV (React na porta 1420) consiga fazer requisições para a API (porta 3000)
+// Limite de Requisições contra Ataques de Força Bruta
+await fastify.register(rateLimit, {
+  global: false // Ativaremos especificamente na rota de auth
+})
+
+// Bloqueia acesso de outros sites (CORS Restrito a portas conhecidas do PDV e ADM)
 await fastify.register(cors, { 
-  origin: '*' 
+  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:1420', 'tauri://localhost', 'https://tauri.localhost'] 
 })
 
 // Configuração da conexão com o Banco de Dados PostgreSQL que acabamos de criar
@@ -27,6 +35,32 @@ const pool = new Pool({
 pool.on('connect', (client) => {
   client.query("SET client_encoding = 'UTF8'")
 })
+
+// ==========================================
+// MIDDLEWARE DE SEGURANÇA (JWT GUARDA DE ROTA)
+// ==========================================
+fastify.addHook('onRequest', async (request, reply) => {
+  // Ignora a rota de login e rotas de preflight (OPTIONS)
+  if (request.url === '/auth' || request.method === 'OPTIONS') return;
+
+  const authHeader = request.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return reply.status(401).send({ error: 'Acesso Negado: Token JWT ausente.' });
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    request.user = decoded; // Salva { id, matricula, nivel } na request
+
+    // Se for uma rota administrativa, bloqueia funcionários normais
+    if (request.url.startsWith('/admin') && decoded.nivel !== 'ADMIN') {
+      return reply.status(403).send({ error: 'Acesso Negado: Apenas Administradores podem acessar.' });
+    }
+  } catch (err) {
+    return reply.status(401).send({ error: 'Acesso Negado: Token inválido ou expirado.' });
+  }
+});
 
 // ==========================================
 // ROTAS DE ADMINISTRAÇÃO (BACKOFFICE)
@@ -93,9 +127,10 @@ fastify.get('/admin/funcionarios', async (request, reply) => {
 fastify.post('/admin/funcionarios', async (request, reply) => {
   const { matricula, senha, cpf, nome, endereco, data_nascimento, desconto_funcionario, nivel_acesso } = request.body
   try {
+    const hashSenha = bcrypt.hashSync(senha, 10)
     const { rows } = await pool.query(
       'INSERT INTO funcionarios (matricula, senha, cpf, nome, endereco, data_nascimento, desconto_funcionario, nivel_acesso) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, matricula, nome, cpf, nivel_acesso, status',
-      [matricula, senha, cpf, nome, endereco || '', data_nascimento || null, desconto_funcionario || 0, nivel_acesso || 'CAIXA']
+      [matricula, hashSenha, cpf, nome, endereco || '', data_nascimento || null, desconto_funcionario || 0, nivel_acesso || 'CAIXA']
     )
     return rows[0]
   } catch(e) {
@@ -146,15 +181,21 @@ fastify.get('/admin/vendas', async (request, reply) => {
 // ==========================================
 // ROTAS DA NOSSA API (FRENTE DE CAIXA)
 // ==========================================
-fastify.post('/auth', async (request, reply) => {
+fastify.post('/auth', {
+  config: {
+    rateLimit: {
+      max: 5,
+      timeWindow: '15 minutes'
+    }
+  }
+}, async (request, reply) => {
   const { matricula, senha } = request.body
   try {
     const { rows } = await pool.query('SELECT * FROM funcionarios WHERE matricula = $1', [matricula])
     if (rows.length === 0) return reply.status(401).send({ error: 'Matrícula não encontrada' })
     
     const func = rows[0]
-    // Em produção usaríamos bcrypt.compareSync(senha, func.senha)
-    if (func.senha !== senha) return reply.status(401).send({ error: 'Senha incorreta' })
+    if (!bcrypt.compareSync(senha, func.senha)) return reply.status(401).send({ error: 'Senha incorreta' })
     if (func.status !== 'ATIVO') return reply.status(403).send({ error: 'Funcionário desativado' })
 
     const token = jwt.sign({ id: func.id, matricula: func.matricula, nivel: func.nivel_acesso }, JWT_SECRET, { expiresIn: '12h' })

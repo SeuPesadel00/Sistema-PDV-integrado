@@ -9,7 +9,9 @@
   },
   "dependencies": {
     "@fastify/cors": "^8.4.1",
+    "@fastify/rate-limit": "^9.1.0",
     "bcryptjs": "^3.0.3",
+    "dotenv": "^18.0.3",
     "fastify": "^4.24.3",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.11.3"
