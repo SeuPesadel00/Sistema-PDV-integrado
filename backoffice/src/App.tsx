@@ -76,7 +76,7 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
   const [estoque, setEstoque] = useState(produto?.estoque_atual?.toString() || '');
   
   const handleSave = async () => {
-    if (!ean || !nome || !precoVenda || !estoque) return alert('Preencha os campos obrigatórios');
+    if (!ean || !nome || precoVenda === '' || estoque === '') return alert('Preencha os campos obrigatórios');
     const token = localStorage.getItem('adm_token');
     await fetch(produto ? `${API}/admin/produtos/${produto.id}` : `${API}/admin/produtos`, {
       method: produto ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
