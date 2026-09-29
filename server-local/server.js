@@ -19,7 +19,7 @@ await fastify.register(rateLimit, {
 
 // Bloqueia acesso de outros sites (CORS Restrito a portas conhecidas do PDV e ADM)
 await fastify.register(cors, { 
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:1420', 'tauri://localhost', 'https://tauri.localhost'] 
+  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:1420', 'tauri://localhost', 'https://tauri.localhost', 'https://sistema-pdv-integrado-enm5.vercel.app'] 
 })
 
 // Configuração da conexão com o Banco de Dados PostgreSQL que acabamos de criar
