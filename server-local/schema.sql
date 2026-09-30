@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS produtos (
     id SERIAL PRIMARY KEY,
     ean VARCHAR(14) UNIQUE NOT NULL,
     nome VARCHAR(100) NOT NULL,
+    preco_custo NUMERIC(10, 2) DEFAULT 0,
     preco_venda NUMERIC(10, 2) NOT NULL,
     estoque_atual INTEGER DEFAULT 0,
     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP

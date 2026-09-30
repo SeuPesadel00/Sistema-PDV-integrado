@@ -87,14 +87,18 @@ fastify.get('/admin/produtos', async (request, reply) => {
 fastify.post('/admin/produtos', async (request, reply) => {
   const { ean, nome, preco_custo, preco_venda, estoque_atual } = request.body
   try {
+    const custo = preco_custo !== undefined && preco_custo !== null && preco_custo !== '' ? Number(preco_custo) : 0
+    const venda = Number(preco_venda)
+    const estoque = estoque_atual !== undefined && estoque_atual !== null && estoque_atual !== '' ? Number(estoque_atual) : 0
+
     const { rows } = await pool.query(
       'INSERT INTO produtos (ean, nome, preco_custo, preco_venda, estoque_atual) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [ean, nome, preco_custo || 0, preco_venda, estoque_atual]
+      [ean, nome, custo, venda, estoque]
     )
     return rows[0]
   } catch(e) {
     fastify.log.error(e)
-    return reply.status(500).send({error: 'Erro ao cadastrar produto. Verifique se o EAN já existe.'})
+    return reply.status(500).send({error: 'Erro ao cadastrar produto: ' + e.message})
   }
 })
 
@@ -103,12 +107,19 @@ fastify.put('/admin/produtos/:id', async (request, reply) => {
   const { id } = request.params
   const { ean, nome, preco_custo, preco_venda, estoque_atual } = request.body
   try {
+    const custo = preco_custo !== undefined && preco_custo !== null && preco_custo !== '' ? Number(preco_custo) : 0
+    const venda = Number(preco_venda)
+    const estoque = estoque_atual !== undefined && estoque_atual !== null && estoque_atual !== '' ? Number(estoque_atual) : 0
+
     await pool.query(
       'UPDATE produtos SET ean=$1, nome=$2, preco_custo=$3, preco_venda=$4, estoque_atual=$5 WHERE id=$6',
-      [ean, nome, preco_custo, preco_venda, estoque_atual, id]
+      [ean, nome, custo, venda, estoque, id]
     )
     return { sucesso: true }
-  } catch(e) { return reply.status(500).send({error: 'Erro ao editar produto'}) }
+  } catch(e) { 
+    fastify.log.error(e)
+    return reply.status(500).send({error: 'Erro ao editar produto: ' + e.message}) 
+  }
 })
 
 // Excluir Produto

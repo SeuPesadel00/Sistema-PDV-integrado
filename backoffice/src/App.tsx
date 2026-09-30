@@ -71,18 +71,41 @@ function LoginScreen({ onLogin }: { onLogin: (nome: string) => void }) {
 function ModalProduto({ produto, onClose, onSaved }: any) {
   const [ean, setEan] = useState(produto?.ean || '');
   const [nome, setNome] = useState(produto?.nome || '');
-  const [precoCusto, setPrecoCusto] = useState(produto?.preco_custo?.toString() || '');
-  const [precoVenda, setPrecoVenda] = useState(produto?.preco_venda?.toString() || '');
-  const [estoque, setEstoque] = useState(produto?.estoque_atual?.toString() || '');
+  const [precoCusto, setPrecoCusto] = useState(produto?.preco_custo !== undefined && produto?.preco_custo !== null ? produto.preco_custo.toString() : '');
+  const [precoVenda, setPrecoVenda] = useState(produto?.preco_venda !== undefined && produto?.preco_venda !== null ? produto.preco_venda.toString() : '');
+  const [estoque, setEstoque] = useState(produto?.estoque_atual !== undefined && produto?.estoque_atual !== null ? produto.estoque_atual.toString() : '');
+  const [salvando, setSalvando] = useState(false);
   
   const handleSave = async () => {
-    if (!ean || !nome || precoVenda === '' || estoque === '') return alert('Preencha os campos obrigatórios');
+    if (!ean || !nome || precoVenda === '' || estoque === '') {
+      return alert('Preencha os campos obrigatórios (EAN, Nome, Preço de Venda e Estoque).');
+    }
     const token = localStorage.getItem('adm_token');
-    await fetch(produto ? `${API}/admin/produtos/${produto.id}` : `${API}/admin/produtos`, {
-      method: produto ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ ean, nome, preco_custo: Number(precoCusto)||0, preco_venda: Number(precoVenda), estoque_atual: Number(estoque) })
-    });
-    onSaved(); onClose();
+    setSalvando(true);
+    try {
+      const res = await fetch(produto ? `${API}/admin/produtos/${produto.id}` : `${API}/admin/produtos`, {
+        method: produto ? 'PUT' : 'POST', 
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ 
+          ean, 
+          nome, 
+          preco_custo: Number(precoCusto) || 0, 
+          preco_venda: Number(precoVenda), 
+          estoque_atual: Number(estoque) 
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.error || 'Erro ao salvar o produto no servidor.');
+        return;
+      }
+      onSaved(); 
+      onClose();
+    } catch(err) {
+      alert('Erro de comunicação com o servidor da API.');
+    } finally {
+      setSalvando(false);
+    }
   };
 
   return (
@@ -90,12 +113,12 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
       <h3 style={{marginTop:0, marginBottom:'20px', color: theme.textMain}}>{produto?'Editar Produto':'Novo Produto'}</h3>
       <div style={styles.inputGroup}><label style={styles.label}>Código de Barras (EAN)</label><input value={ean} onChange={e=>setEan(e.target.value)} style={styles.input} /></div>
       <div style={styles.inputGroup}><label style={styles.label}>Nome do Produto</label><input value={nome} onChange={e=>setNome(e.target.value)} style={styles.input} /></div>
-      <div style={styles.inputGroup}><label style={styles.label}>Preço de Custo (R$)</label><input type="number" value={precoCusto} onChange={e=>setPrecoCusto(e.target.value)} style={styles.input} /></div>
-      <div style={styles.inputGroup}><label style={styles.label}>Preço de Venda (R$)</label><input type="number" value={precoVenda} onChange={e=>setPrecoVenda(e.target.value)} style={styles.input} /></div>
-      <div style={{...styles.inputGroup, marginBottom:'20px'}}><label style={styles.label}>Estoque Inicial</label><input type="number" value={estoque} onChange={e=>setEstoque(e.target.value)} style={styles.input} /></div>
+      <div style={styles.inputGroup}><label style={styles.label}>Preço de Custo (R$)</label><input type="number" step="0.01" value={precoCusto} onChange={e=>setPrecoCusto(e.target.value)} style={styles.input} /></div>
+      <div style={styles.inputGroup}><label style={styles.label}>Preço de Venda (R$)</label><input type="number" step="0.01" value={precoVenda} onChange={e=>setPrecoVenda(e.target.value)} style={styles.input} /></div>
+      <div style={{...styles.inputGroup, marginBottom:'20px'}}><label style={styles.label}>{produto ? 'Quantidade em Estoque' : 'Estoque Inicial'}</label><input type="number" min="0" value={estoque} onChange={e=>setEstoque(e.target.value)} style={styles.input} /></div>
       <div style={{display:'flex', gap:'10px', justifyContent:'flex-end'}}>
-        <button onClick={onClose} style={styles.btnSecondary}>Cancelar</button>
-        <button onClick={handleSave} style={styles.btnPrimary}>Salvar Produto</button>
+        <button onClick={onClose} disabled={salvando} style={styles.btnSecondary}>Cancelar</button>
+        <button onClick={handleSave} disabled={salvando} style={styles.btnPrimary}>{salvando ? 'Salvando...' : 'Salvar Produto'}</button>
       </div>
     </div></div>
   );
