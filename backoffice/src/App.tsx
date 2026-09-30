@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Package, LayoutDashboard, LogOut, Receipt } from 'lucide-react';
+import { Users, Package, LayoutDashboard, LogOut, Receipt, Settings } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const DEFAULT_API = 'https://bottom-hip-story-honest.trycloudflare.com';
+
+export function getApiUrl(): string {
+  const custom = typeof window !== 'undefined' ? localStorage.getItem('backoffice_apiUrl') : null;
+  if (custom) return custom.replace(/\/$/, '');
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL.replace(/\/$/, '');
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return 'http://localhost:3000';
+  }
+  return DEFAULT_API;
+}
 
 const theme = {
   bgMain: '#111827', // Fundo escuro igual ao PDV
@@ -27,6 +37,34 @@ const styles = {
   td: { padding: '12px 16px', fontSize: '0.85rem', color: theme.textMain, borderBottom: '1px solid #e5e7eb', textAlign: 'left' as const },
 };
 
+function ConfigServerModal({ currentUrl, onClose, onSave }: { currentUrl: string, onClose: () => void, onSave: (url: string) => void }) {
+  const [url, setUrl] = useState(currentUrl);
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={e => e.stopPropagation()}>
+        <h3 style={{ marginTop: 0, marginBottom: '15px', color: theme.textMain }}>⚙️ Configuração do Servidor / API</h3>
+        <p style={{ fontSize: '0.85rem', color: theme.textMuted, marginBottom: '15px' }}>
+          Informe a URL da API da loja (Túnel Cloudflare ou Localhost):
+        </p>
+        <div style={styles.inputGroup}>
+          <label style={styles.label}>Endereço da API</label>
+          <input 
+            type="text" 
+            placeholder="Ex: https://...trycloudflare.com ou http://localhost:3000" 
+            value={url} 
+            onChange={e => setUrl(e.target.value)} 
+            style={styles.input} 
+          />
+        </div>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+          <button type="button" onClick={onClose} style={styles.btnSecondary}>Cancelar</button>
+          <button type="button" onClick={() => { onSave(url.trim()); onClose(); }} style={styles.btnPrimary}>Salvar URL</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ==========================================
 // TELA DE LOGIN (IDÊNTICA AO PDV)
 // ==========================================
@@ -34,27 +72,61 @@ function LoginScreen({ onLogin }: { onLogin: (nome: string) => void }) {
   const [matricula, setMatricula] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
+  const [showConfig, setShowConfig] = useState(false);
+  const [currentApi, setCurrentApi] = useState(getApiUrl());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
+    const api = getApiUrl();
     try {
-      const res = await fetch(`${API}/auth`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ matricula, senha }) });
+      const res = await fetch(`${api}/auth`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ matricula, senha }) 
+      });
       if (!res.ok) { setErro('Acesso Negado: Matrícula ou senha incorretos!'); return; }
       const data = await res.json();
       if (data.nivel !== 'ADMIN') { setErro('Acesso Negado: Você não tem permissão de Administrador.'); return; }
       localStorage.setItem('adm_token', data.token);
       onLogin(data.nome);
-    } catch { setErro('Erro crítico: Servidor Banco de Dados Offline.'); }
+    } catch { 
+      setErro(`Erro crítico: Servidor Banco de Dados Offline (${api}).`); 
+    }
+  };
+
+  const handleSaveApi = (newUrl: string) => {
+    localStorage.setItem('backoffice_apiUrl', newUrl);
+    setCurrentApi(newUrl);
+    setErro('');
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', backgroundColor: theme.bgMain, alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, sans-serif' }}>
-      <form onSubmit={handleSubmit} style={{ backgroundColor: theme.bgPanel, padding: '3rem', borderRadius: '16px', border: `1px solid ${theme.border}`, textAlign: 'center', minWidth: '350px' }}>
+    <div style={{ display: 'flex', height: '100vh', width: '100vw', backgroundColor: theme.bgMain, alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, sans-serif', position: 'relative' }}>
+      
+      {showConfig && (
+        <ConfigServerModal 
+          currentUrl={currentApi} 
+          onClose={() => setShowConfig(false)} 
+          onSave={handleSaveApi} 
+        />
+      )}
+
+      <form onSubmit={handleSubmit} style={{ backgroundColor: theme.bgPanel, padding: '3rem', borderRadius: '16px', border: `1px solid ${theme.border}`, textAlign: 'center', minWidth: '350px', position: 'relative' }}>
+        
+        <button 
+          type="button" 
+          onClick={() => setShowConfig(true)}
+          title="Configurar URL do Servidor"
+          style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', padding: '5px' }}
+        >
+          <Settings size={20} />
+        </button>
+
         <h2 style={{ color: theme.accent, marginBottom: '2rem' }}>🔒 ACESSO RESTRITO (ADM)</h2>
         {erro && <div style={{ color: theme.danger, marginBottom: '1rem', fontSize: '0.9rem', fontWeight: 'bold' }}>{erro}</div>}
         
-        <input type="text" placeholder="Matrícula (Ex: 12345)" maxLength={5} value={matricula} onChange={e => setMatricula(e.target.value)} 
+        <input type="text" placeholder="Matrícula (Ex: 00001)" maxLength={5} value={matricula} onChange={e => setMatricula(e.target.value)} 
           style={{ width: '100%', padding: '1rem', marginBottom: '1rem', backgroundColor: theme.border, color: 'white', border: 'none', borderRadius: '8px', boxSizing: 'border-box' }} />
         
         <input type="password" placeholder="Senha" value={senha} onChange={e => setSenha(e.target.value)} 
@@ -63,6 +135,15 @@ function LoginScreen({ onLogin }: { onLogin: (nome: string) => void }) {
         <button type="submit" style={{ width: '100%', padding: '1rem', backgroundColor: theme.accent, color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}>
           ENTRAR NO PAINEL
         </button>
+
+        <div style={{ marginTop: '1.5rem', fontSize: '0.8rem', color: theme.textMuted }}>
+          Servidor: <br/>
+          <span style={{ color: theme.accent, wordBreak: 'break-all', fontSize: '0.75rem' }}>{currentApi}</span>
+          <br />
+          <button type="button" onClick={() => setShowConfig(true)} style={{ background: 'none', border: 'none', color: theme.accent, cursor: 'pointer', textDecoration: 'underline', marginTop: '6px', fontSize: '0.8rem' }}>
+            ⚙️ Alterar URL do Servidor
+          </button>
+        </div>
       </form>
     </div>
   );
@@ -81,9 +162,10 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
       return alert('Preencha os campos obrigatórios (EAN, Nome, Preço de Venda e Estoque).');
     }
     const token = localStorage.getItem('adm_token');
+    const api = getApiUrl();
     setSalvando(true);
     try {
-      const res = await fetch(produto ? `${API}/admin/produtos/${produto.id}` : `${API}/admin/produtos`, {
+      const res = await fetch(produto ? `${api}/admin/produtos/${produto.id}` : `${api}/admin/produtos`, {
         method: produto ? 'PUT' : 'POST', 
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ 
@@ -141,14 +223,15 @@ export default function App() {
     const token = localStorage.getItem('adm_token');
     if (!token) return;
     const headers = { 'Authorization': `Bearer ${token}` };
+    const api = getApiUrl();
     try {
-      const resP = await fetch(`${API}/admin/produtos`, { headers });
+      const resP = await fetch(`${api}/admin/produtos`, { headers });
       if (resP.status === 401) { handleLogout(); return; }
       
       const [dP, dF, dV] = await Promise.all([
         resP.json(),
-        fetch(`${API}/admin/funcionarios`, { headers }).then(r => r.json()),
-        fetch(`${API}/admin/vendas`, { headers }).then(r => r.json())
+        fetch(`${api}/admin/funcionarios`, { headers }).then(r => r.json()),
+        fetch(`${api}/admin/vendas`, { headers }).then(r => r.json())
       ]);
       
       if (Array.isArray(dP)) setProdutos(dP);
