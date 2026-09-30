@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Package, LayoutDashboard, LogOut, Receipt, Settings } from 'lucide-react';
+import { Users, Package, LayoutDashboard, LogOut, Receipt } from 'lucide-react';
 
 const DEFAULT_API = 'https://bottom-hip-story-honest.trycloudflare.com';
 
@@ -112,17 +112,13 @@ function LoginScreen({ onLogin }: { onLogin: (nome: string) => void }) {
         />
       )}
 
-      <form onSubmit={handleSubmit} style={{ backgroundColor: theme.bgPanel, padding: '3rem', borderRadius: '16px', border: `1px solid ${theme.border}`, textAlign: 'center', minWidth: '350px', position: 'relative' }}>
-        
-        <button 
-          type="button" 
-          onClick={() => setShowConfig(true)}
-          title="Configurar URL do Servidor"
-          style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', padding: '5px' }}
-        >
-          <Settings size={20} />
-        </button>
+      {/* TRUQUE: área secreta no canto superior esquerdo para abrir a config no duplo clique */}
+      <div 
+        onDoubleClick={() => setShowConfig(true)} 
+        style={{ position: 'absolute', top: 0, left: 0, width: '50px', height: '50px', zIndex: 999 }} 
+      />
 
+      <form onSubmit={handleSubmit} style={{ backgroundColor: theme.bgPanel, padding: '3rem', borderRadius: '16px', border: `1px solid ${theme.border}`, textAlign: 'center', minWidth: '350px', position: 'relative' }}>
         <h2 style={{ color: theme.accent, marginBottom: '2rem' }}>🔒 ACESSO RESTRITO (ADM)</h2>
         {erro && <div style={{ color: theme.danger, marginBottom: '1rem', fontSize: '0.9rem', fontWeight: 'bold' }}>{erro}</div>}
         
@@ -135,15 +131,6 @@ function LoginScreen({ onLogin }: { onLogin: (nome: string) => void }) {
         <button type="submit" style={{ width: '100%', padding: '1rem', backgroundColor: theme.accent, color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}>
           ENTRAR NO PAINEL
         </button>
-
-        <div style={{ marginTop: '1.5rem', fontSize: '0.8rem', color: theme.textMuted }}>
-          Servidor: <br/>
-          <span style={{ color: theme.accent, wordBreak: 'break-all', fontSize: '0.75rem' }}>{currentApi}</span>
-          <br />
-          <button type="button" onClick={() => setShowConfig(true)} style={{ background: 'none', border: 'none', color: theme.accent, cursor: 'pointer', textDecoration: 'underline', marginTop: '6px', fontSize: '0.8rem' }}>
-            ⚙️ Alterar URL do Servidor
-          </button>
-        </div>
       </form>
     </div>
   );
