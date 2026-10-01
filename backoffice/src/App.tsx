@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Package, LayoutDashboard, LogOut, Receipt } from 'lucide-react';
 
-const DEFAULT_API = 'https://bottom-hip-story-honest.trycloudflare.com';
+const DEFAULT_API = 'https://api-tailandia.onrender.com';
 
 export function getApiUrl(): string {
-  const custom = typeof window !== 'undefined' ? localStorage.getItem('backoffice_apiUrl') : null;
-  if (custom) return custom.replace(/\/$/, '');
+  // Ignora o localStorage agora, porque a API está na nuvem permanentemente!
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL.replace(/\/$/, '');
   if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     return 'http://localhost:3000';
