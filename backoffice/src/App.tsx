@@ -147,6 +147,60 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
   );
 }
 
+function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
+  // Matrícula aleatória de 5 dígitos (ex: 10000 até 99999)
+  const [matricula] = useState(funcionario?.matricula || String(Math.floor(10000 + Math.random() * 90000)));
+  const [nome, setNome] = useState(funcionario?.nome || '');
+  const [cpf, setCpf] = useState(funcionario?.cpf || '');
+  const [senha, setSenha] = useState('');
+  const [nivel, setNivel] = useState(funcionario?.nivel_acesso || 'CAIXA');
+  const [salvando, setSalvando] = useState(false);
+
+  const handleSave = async () => {
+    if (!nome || !cpf || (!funcionario && !senha)) return alert('Preencha Nome, CPF e Senha!');
+    const token = localStorage.getItem('adm_token');
+    const api = getApiUrl();
+    setSalvando(true);
+    try {
+      const res = await fetch(funcionario ? `${api}/admin/funcionarios/${funcionario.id}` : `${api}/admin/funcionarios`, {
+        method: funcionario ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ matricula, nome, cpf, senha, nivel_acesso: nivel, status: 'ATIVO' })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Erro ao salvar funcionário.');
+      }
+      onSaved();
+      onClose();
+    } catch(e: any) {
+      alert(e.message);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <div style={styles.overlay} onClick={onClose}><div style={styles.modal} onClick={e=>e.stopPropagation()}>
+      <h3 style={{marginTop:0, marginBottom:'20px', color: theme.textMain}}>{funcionario?'Editar Funcionário':'Novo Funcionário'}</h3>
+      <div style={styles.inputGroup}><label style={styles.label}>Matrícula (Gerada Auto)</label><input value={matricula} readOnly style={{...styles.input, backgroundColor: '#f3f4f6'}} /></div>
+      <div style={styles.inputGroup}><label style={styles.label}>Nome Completo</label><input value={nome} onChange={e=>setNome(e.target.value)} style={styles.input} /></div>
+      <div style={styles.inputGroup}><label style={styles.label}>CPF</label><input value={cpf} onChange={e=>setCpf(e.target.value)} placeholder="000.000.000-00" style={styles.input} /></div>
+      {!funcionario && <div style={styles.inputGroup}><label style={styles.label}>Senha de Acesso</label><input type="password" value={senha} onChange={e=>setSenha(e.target.value)} style={styles.input} /></div>}
+      <div style={{...styles.inputGroup, marginBottom:'20px'}}><label style={styles.label}>Nível de Acesso</label>
+        <select value={nivel} onChange={e=>setNivel(e.target.value)} style={styles.input}>
+          <option value="CAIXA">Caixa (PDV)</option>
+          <option value="ADMIN">Administrador (Retaguarda)</option>
+        </select>
+      </div>
+      <div style={{display:'flex', gap:'10px', justifyContent:'flex-end'}}>
+        <button onClick={onClose} disabled={salvando} style={styles.btnSecondary}>Cancelar</button>
+        <button onClick={handleSave} disabled={salvando} style={styles.btnPrimary}>{salvando ? 'Salvando...' : 'Salvar Funcionário'}</button>
+      </div>
+    </div></div>
+  );
+}
+
 // ==========================================
 // PAINEL ADMINISTRATIVO PRINCIPAL
 // ==========================================
@@ -159,6 +213,7 @@ export default function App() {
   const [filtroPagamento, setFiltroPagamento] = useState('TODOS');
   
   const [modalProduto, setModalProduto] = useState<any>({ open: false, data: null });
+  const [modalFuncionario, setModalFuncionario] = useState<any>({ open: false, data: null });
 
   const carregarDados = async () => {
     const token = localStorage.getItem('adm_token');
@@ -208,6 +263,7 @@ export default function App() {
     <div style={{ display: 'flex', height: '100vh', backgroundColor: theme.bgApp, fontFamily: 'system-ui, sans-serif' }}>
       
       {modalProduto.open && <ModalProduto produto={modalProduto.data} onClose={() => setModalProduto({ open: false, data: null })} onSaved={carregarDados} />}
+      {modalFuncionario.open && <ModalFuncionario funcionario={modalFuncionario.data} onClose={() => setModalFuncionario({ open: false, data: null })} onSaved={carregarDados} />}
 
       {/* MENU LATERAL ESCURO */}
       <div style={{ width: '250px', backgroundColor: theme.bgPanel, color: 'white', display: 'flex', flexDirection: 'column' }}>
@@ -257,12 +313,24 @@ export default function App() {
                   <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: theme.textMain }}>{vendas.length}</div>
                 </div>
                 <div style={{ padding: '25px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.9rem', color: theme.textMuted, fontWeight: 'bold' }}>PRODUTOS CADASTRADOS</div>
-                  <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: theme.textMain }}>{produtos.length}</div>
+                  <div style={{ fontSize: '0.9rem', color: theme.textMuted, fontWeight: 'bold' }}>TICKET MÉDIO</div>
+                  <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: theme.textMain }}>R$ {vendas.length > 0 ? (vendas.reduce((acc, v) => acc + Number(v.total), 0) / vendas.length).toFixed(2) : '0.00'}</div>
                 </div>
                 <div style={{ padding: '25px', backgroundColor: theme.accent, borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                   <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)', fontWeight: 'bold' }}>FATURAMENTO BRUTO</div>
                   <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'white' }}>R$ {vendas.reduce((acc, v) => acc + Number(v.total), 0).toFixed(2)}</div>
+                </div>
+                <div style={{ padding: '25px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                  <div style={{ fontSize: '0.9rem', color: theme.textMuted, fontWeight: 'bold' }}>PRODUTOS CADASTRADOS</div>
+                  <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: theme.textMain }}>{produtos.length}</div>
+                </div>
+                <div style={{ padding: '25px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                  <div style={{ fontSize: '0.9rem', color: theme.textMuted, fontWeight: 'bold' }}>ALERTA DE ESTOQUE (Baixo)</div>
+                  <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: theme.danger }}>{produtos.filter(p => p.estoque_atual < 10).length} un</div>
+                </div>
+                <div style={{ padding: '25px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                  <div style={{ fontSize: '0.9rem', color: theme.textMuted, fontWeight: 'bold' }}>EQUIPE ATIVA</div>
+                  <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: theme.textMain }}>{funcionarios.filter(f => f.status === 'ATIVO').length}</div>
                 </div>
               </div>
             </div>
@@ -353,7 +421,8 @@ export default function App() {
           {activeTab === 'funcionarios' && (
             <div>
                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h2 style={{ color: theme.textMain, margin: 0 }}>Quadro de Funcionários</h2>
+                  <h2 style={{ color: theme.textMain, margin: 0 }}>Quadro de Funcionários e RH</h2>
+                  <button onClick={() => setModalFuncionario({ open: true, data: null })} style={styles.btnPrimary}>+ Novo Funcionário</button>
                </div>
                <table style={{ width: '100%', backgroundColor: 'white', borderCollapse: 'collapse', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', borderRadius: '8px', overflow: 'hidden' }}>
                 <thead>
