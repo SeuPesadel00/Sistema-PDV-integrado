@@ -384,7 +384,7 @@ export default function App() {
                       <td style={styles.td}>{p.ean}</td><td style={styles.td}>{p.nome}</td>
                       <td style={{...styles.td, fontWeight: 'bold'}}>R$ {Number(p.preco_venda).toFixed(2)}</td>
                       <td style={styles.td}>
-                        <span style={{ color: p.estoque_atual > 10 ? theme.accent : theme.danger, fontWeight: 'bold' }}>
+                        <span style={{ color: p.estoque_atual >= 10 ? theme.accent : theme.danger, fontWeight: 'bold' }}>
                           {p.estoque_atual} un
                         </span>
                       </td>

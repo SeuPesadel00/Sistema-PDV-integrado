@@ -23,14 +23,19 @@ await fastify.register(cors, {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 })
 
-// Configuração da conexão com o Banco de Dados PostgreSQL que acabamos de criar
-const pool = new Pool({
-  user: 'postgres',
-  host: '127.0.0.1',
-  database: 'Tailandia_db',
-  password: 'Tailandia@2026', 
-  port: 6666,
-})
+// Configuração da conexão com o Banco de Dados (Supabase/Local)
+const pool = process.env.DATABASE_URL 
+  ? new Pool({ 
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_URL.includes('supabase') ? { rejectUnauthorized: false } : false
+    })
+  : new Pool({
+      user: 'postgres',
+      host: '127.0.0.1',
+      database: 'Tailandia_db',
+      password: 'Tailandia@2026', 
+      port: 6666,
+    })
 
 // Força UTF-8 em toda nova conexão (resolve incompatibilidade WIN1252 no Windows)
 pool.on('connect', (client) => {
