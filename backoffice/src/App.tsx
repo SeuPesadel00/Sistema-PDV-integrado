@@ -4,8 +4,7 @@ import { Users, Package, LayoutDashboard, LogOut, Receipt } from 'lucide-react';
 const DEFAULT_API = 'https://api-tailandia.onrender.com';
 
 export function getApiUrl(): string {
-  // Ignora o localStorage agora, porque a API está na nuvem permanentemente!
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL.replace(/\/$/, '');
+  // Força o uso da API na nuvem ignorando variáveis do Vercel que podem estar velhas
   if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     return 'http://localhost:3000';
   }
