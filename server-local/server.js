@@ -201,8 +201,8 @@ fastify.get('/admin/vendas', async (request, reply) => {
 fastify.post('/auth', {
   config: {
     rateLimit: {
-      max: 5,
-      timeWindow: '15 minutes'
+      max: 20,
+      timeWindow: '1 minute'
     }
   }
 }, async (request, reply) => {

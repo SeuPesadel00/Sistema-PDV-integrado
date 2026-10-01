@@ -35,34 +35,6 @@ const styles = {
   td: { padding: '12px 16px', fontSize: '0.85rem', color: theme.textMain, borderBottom: '1px solid #e5e7eb', textAlign: 'left' as const },
 };
 
-function ConfigServerModal({ currentUrl, onClose, onSave }: { currentUrl: string, onClose: () => void, onSave: (url: string) => void }) {
-  const [url, setUrl] = useState(currentUrl);
-  return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={e => e.stopPropagation()}>
-        <h3 style={{ marginTop: 0, marginBottom: '15px', color: theme.textMain }}>⚙️ Configuração do Servidor / API</h3>
-        <p style={{ fontSize: '0.85rem', color: theme.textMuted, marginBottom: '15px' }}>
-          Informe a URL da API da loja (Túnel Cloudflare ou Localhost):
-        </p>
-        <div style={styles.inputGroup}>
-          <label style={styles.label}>Endereço da API</label>
-          <input 
-            type="text" 
-            placeholder="Ex: https://...trycloudflare.com ou http://localhost:3000" 
-            value={url} 
-            onChange={e => setUrl(e.target.value)} 
-            style={styles.input} 
-          />
-        </div>
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
-          <button type="button" onClick={onClose} style={styles.btnSecondary}>Cancelar</button>
-          <button type="button" onClick={() => { onSave(url.trim()); onClose(); }} style={styles.btnPrimary}>Salvar URL</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ==========================================
 // TELA DE LOGIN (IDÊNTICA AO PDV)
 // ==========================================
@@ -70,8 +42,6 @@ function LoginScreen({ onLogin }: { onLogin: (nome: string) => void }) {
   const [matricula, setMatricula] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
-  const [showConfig, setShowConfig] = useState(false);
-  const [currentApi, setCurrentApi] = useState(getApiUrl());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,7 +53,14 @@ function LoginScreen({ onLogin }: { onLogin: (nome: string) => void }) {
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ matricula, senha }) 
       });
-      if (!res.ok) { setErro('Acesso Negado: Matrícula ou senha incorretos!'); return; }
+      if (res.status === 429) {
+        setErro('Muitas tentativas! Aguarde 15 minutos por segurança.');
+        return;
+      }
+      if (!res.ok) { 
+        setErro('Acesso Negado: Matrícula ou senha incorretos, ou servidor falhou.'); 
+        return; 
+      }
       const data = await res.json();
       if (data.nivel !== 'ADMIN') { setErro('Acesso Negado: Você não tem permissão de Administrador.'); return; }
       localStorage.setItem('adm_token', data.token);
@@ -93,29 +70,8 @@ function LoginScreen({ onLogin }: { onLogin: (nome: string) => void }) {
     }
   };
 
-  const handleSaveApi = (newUrl: string) => {
-    localStorage.setItem('backoffice_apiUrl', newUrl);
-    setCurrentApi(newUrl);
-    setErro('');
-  };
-
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', backgroundColor: theme.bgMain, alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, sans-serif', position: 'relative' }}>
-      
-      {showConfig && (
-        <ConfigServerModal 
-          currentUrl={currentApi} 
-          onClose={() => setShowConfig(false)} 
-          onSave={handleSaveApi} 
-        />
-      )}
-
-      {/* TRUQUE: área secreta no canto superior esquerdo para abrir a config no duplo clique */}
-      <div 
-        onDoubleClick={() => setShowConfig(true)} 
-        style={{ position: 'absolute', top: 0, left: 0, width: '50px', height: '50px', zIndex: 999 }} 
-      />
-
       <form onSubmit={handleSubmit} style={{ backgroundColor: theme.bgPanel, padding: '3rem', borderRadius: '16px', border: `1px solid ${theme.border}`, textAlign: 'center', minWidth: '350px', position: 'relative' }}>
         <h2 style={{ color: theme.accent, marginBottom: '2rem' }}>🔒 ACESSO RESTRITO (ADM)</h2>
         {erro && <div style={{ color: theme.danger, marginBottom: '1rem', fontSize: '0.9rem', fontWeight: 'bold' }}>{erro}</div>}
