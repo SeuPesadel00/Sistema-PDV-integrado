@@ -200,6 +200,8 @@ table.tbl { width: 100%; border-collapse: collapse; }
 .tbl tbody tr.row:hover td { background: var(--bg-hover); }
 .tbl tr.clickable { cursor: pointer; }
 .tbl tr.expanded td { background: var(--bg-hover); }
+.tbl tbody tr.menu-open { position: relative !important; z-index: 9999 !important; }
+.tbl tbody tr.menu-open td { position: relative !important; z-index: 9999 !important; }
 .tbl .strong { color: var(--text); font-weight: 600; }
 .empty { text-align: center; padding: 48px 16px !important; color: var(--text-muted) !important; }
 

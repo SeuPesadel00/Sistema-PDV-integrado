@@ -81,6 +81,15 @@ export default function App() {
   const [estornoObs, setEstornoObs] = useState("");
   const [estornoLoading, setEstornoLoading] = useState(false);
 
+  // Modal de Cancelamento de Venda no Painel ADM
+  const [showCancelarModal, setShowCancelarModal] = useState<any | null>(null);
+  const [cancelarMotivo, setCancelarMotivo] = useState("Desistência do cliente");
+  const [cancelarObs, setCancelarObs] = useState("");
+  const [cancelarLoading, setCancelarLoading] = useState(false);
+
+  // Modal de Confirmação para Cancelar Venda Atual no Caixa (F4)
+  const [showConfirmarCancelarVendaAtual, setShowConfirmarCancelarVendaAtual] = useState(false);
+
   // Catálogo de Produtos para Busca Inteligente (Nome / Descrição / EAN)
   const [catalogoProdutos, setCatalogoProdutos] = useState<any[]>(() => {
     try {
@@ -186,12 +195,12 @@ export default function App() {
 
   // Focus management
   useEffect(() => {
-    if (isAuthenticated && !showRecebimento && !showExitModal && !showCloseRegister && !alertMsg && !printPrompt && !showAdminAuthModal && !showAdminPanel && !showEstornoModal) {
+    if (isAuthenticated && !showRecebimento && !showExitModal && !showCloseRegister && !alertMsg && !printPrompt && !showAdminAuthModal && !showAdminPanel && !showEstornoModal && !showCancelarModal && !showConfirmarCancelarVendaAtual) {
       inputRef.current?.focus();
     } else if (showRecebimento && !showPix && !showCard && !showPosAuth && !alertMsg && !printPrompt) {
       recebimentoInputRef.current?.focus();
     }
-  }, [isAuthenticated, showRecebimento, showPix, showCard, showPosAuth, showCloseRegister, showExitModal, alertMsg, printPrompt, showAdminAuthModal, showAdminPanel, showEstornoModal]);
+  }, [isAuthenticated, showRecebimento, showPix, showCard, showPosAuth, showCloseRegister, showExitModal, alertMsg, printPrompt, showAdminAuthModal, showAdminPanel, showEstornoModal, showCancelarModal, showConfirmarCancelarVendaAtual]);
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = Math.round(cart.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * 100) / 100;
@@ -243,7 +252,30 @@ export default function App() {
         return;
       }
 
-      // Modais do Painel ADM
+      // Modais do Painel ADM e Cancelamento
+      if (showCancelarModal) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowCancelarModal(null);
+          return;
+        }
+        return;
+      }
+
+      if (showConfirmarCancelarVendaAtual) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowConfirmarCancelarVendaAtual(false);
+          return;
+        }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          handleConfirmarCancelarVendaAtual();
+          return;
+        }
+        return;
+      }
+
       if (showEstornoModal) {
         if (e.key === "Escape") {
           e.preventDefault();
@@ -400,7 +432,7 @@ export default function App() {
       // 9. Tela Principal (Balcão do Caixa)
       if (isAuthenticated) {
         if (e.key === "F3") { e.preventDefault(); if (cart.length > 0) setShowRecebimento(true); return; }
-        if (e.key === "F4") { e.preventDefault(); cancelarVenda(); return; }
+        if (e.key === "F4") { e.preventDefault(); handleSolicitarCancelarVendaAtual(); return; }
         if (e.key === "F5") { e.preventDefault(); setShowCloseRegister(true); return; }
         if (e.key === "Escape") { e.preventDefault(); setShowExitModal(true); return; }
       }
@@ -411,7 +443,7 @@ export default function App() {
     isAuthenticated, showExitModal, showCloseRegister, showRecebimento, 
     showPix, showCard, showPosAuth, alertMsg, printPrompt, cart, resta,
     posAuthCode, cardType, paymentValue, showAdminAuthModal, showAdminPanel, showEstornoModal,
-    itemParaRemover
+    showCancelarModal, showConfirmarCancelarVendaAtual, itemParaRemover
   ]);
 
   // ---------- CARREGAMENTO DO CATÁLOGO DE PRODUTOS ----------
@@ -448,15 +480,15 @@ export default function App() {
     }
   }, [isAuthenticated, carregarCatalogo]);
 
-  // Produtos sugeridos para a barra de pesquisa/bipagem por nome ou código
+  // Produtos sugeridos para a barra de pesquisa/bipagem por nome ou código (a partir da 1ª letra)
   const produtosSugeridos = useMemo(() => {
     const termo = barcode.trim().toLowerCase();
-    if (!termo || termo.length < 2) return [];
+    if (!termo || termo.length < 1) return [];
     return catalogoProdutos.filter(p => {
       const nome = (p.nome || '').toLowerCase();
       const ean = (p.ean || '').toLowerCase();
       return nome.includes(termo) || ean.includes(termo);
-    }).slice(0, 12);
+    }).slice(0, 15);
   }, [barcode, catalogoProdutos]);
 
   // Adiciona produto ao carrinho com checagem de estoque
@@ -495,7 +527,7 @@ export default function App() {
     const val = e.target.value;
     setBarcode(val);
     setSugestoesIndex(0);
-    if (val.trim().length >= 2) {
+    if (val.trim().length >= 1) {
       setShowSugestoes(true);
     } else {
       setShowSugestoes(false);
@@ -612,12 +644,24 @@ export default function App() {
     return Math.round(v * 100) / 100;
   };
 
-  const cancelarVenda = () => {
+  const handleSolicitarCancelarVendaAtual = () => {
+    if (cart.length === 0) {
+      setAlertMsg("Nenhum item no carrinho para cancelar.");
+      return;
+    }
+    setShowConfirmarCancelarVendaAtual(true);
+  };
+
+  const handleConfirmarCancelarVendaAtual = () => {
     setCart([]);
     setPayments([]);
     setCpfCnpj("");
     setShowRecebimento(false);
+    setShowConfirmarCancelarVendaAtual(false);
+    setAlertMsg("Venda cancelada pelo operador com sucesso.");
   };
+
+  const cancelarVenda = handleSolicitarCancelarVendaAtual;
 
   const addPayment = (method: string, authCode?: string) => {
     const v = parsePaymentValue();
@@ -794,35 +838,51 @@ export default function App() {
     }, 150);
   };
 
-  const handleCancelarVendaAdmin = async (venda: any) => {
+  const handleAbrirModalCancelar = (venda: any) => {
     if (venda.status === 'CANCELADA') {
-      alert('Esta venda já está cancelada.');
+      setAlertMsg('Esta venda já se encontra cancelada.');
       return;
     }
-    const motivo = window.prompt(`Informe o motivo do cancelamento da Venda #${String(venda.id).padStart(6, '0')}:`, 'Desistência do cliente / Cancelamento solicitado no caixa');
-    if (motivo === null) return;
+    setShowCancelarModal(venda);
+    setCancelarMotivo("Desistência do cliente");
+    setCancelarObs("");
+    setAdminMenuAbertoId(null);
+  };
+
+  const handleConfirmarCancelarVendaAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showCancelarModal) return;
+    const venda = showCancelarModal;
+    setCancelarLoading(true);
 
     try {
       const token = adminToken || sessionStorage.getItem('pdv_token');
+      const motivoFinal = cancelarObs.trim() ? `${cancelarMotivo} - ${cancelarObs.trim()}` : cancelarMotivo;
+
       await fetch(`${apiUrl}/admin/vendas/${venda.id}/cancelar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ motivo })
+        body: JSON.stringify({ motivo: motivoFinal })
       }).catch(() => {});
 
       // Salva override local
       const overridesRaw = localStorage.getItem('vendas_status_override');
       const overrides = overridesRaw ? JSON.parse(overridesRaw) : {};
-      overrides[venda.id] = { status: 'CANCELADA', motivo_cancelamento: motivo, status_nfe: 'CANCELADA' };
+      overrides[venda.id] = { status: 'CANCELADA', motivo_cancelamento: motivoFinal, status_nfe: 'CANCELADA' };
       localStorage.setItem('vendas_status_override', JSON.stringify(overrides));
 
-      setAdminVendas(prev => prev.map(v => v.id === venda.id ? { ...v, status: 'CANCELADA', motivo_cancelamento: motivo, status_nfe: 'CANCELADA' } : v));
+      setAdminVendas(prev => prev.map(v => v.id === venda.id ? { ...v, status: 'CANCELADA', motivo_cancelamento: motivoFinal, status_nfe: 'CANCELADA' } : v));
+      setShowCancelarModal(null);
       setAdminMenuAbertoId(null);
-      alert(`Venda #${String(venda.id).padStart(6, '0')} cancelada com sucesso! O estoque foi atualizado e sincronizado com a retaguarda.`);
+      setAlertMsg(`Venda #${String(venda.id).padStart(6, '0')} cancelada com sucesso! O estoque foi atualizado e sincronizado com a retaguarda.`);
     } catch (e: any) {
-      alert("Erro ao cancelar venda: " + e.message);
+      setAlertMsg("Erro ao cancelar venda: " + e.message);
+    } finally {
+      setCancelarLoading(false);
     }
   };
+
+  const handleCancelarVendaAdmin = handleAbrirModalCancelar;
 
   const handleAbrirModalEstorno = (venda: any) => {
     setShowEstornoModal(venda);
@@ -1076,7 +1136,7 @@ export default function App() {
               value={barcode}
               onChange={handleBarcodeChange}
               onKeyDown={handleBarcodeKeyDown}
-              onFocus={() => { if (produtosSugeridos.length > 0) setShowSugestoes(true); }}
+              onFocus={() => { if (barcode.trim().length >= 1 && produtosSugeridos.length > 0) setShowSugestoes(true); }}
             />
 
             {showSugestoes && produtosSugeridos.length > 0 && (
@@ -1107,7 +1167,7 @@ export default function App() {
           </div>
 
           <div className="shortcuts-panel" style={{ marginTop: '2rem' }}>
-            <button className="shortcut-btn" onClick={cancelarVenda}>Cancelar Venda <span>[ F4 ]</span></button>
+            <button className="shortcut-btn" onClick={handleSolicitarCancelarVendaAtual}>Cancelar Venda <span>[ F4 ]</span></button>
             <button className="shortcut-btn" style={{ gridColumn: "span 2" }} onClick={() => cart.length > 0 && setShowRecebimento(true)}>Recebimento <span>[ F3 ]</span></button>
             <button className="shortcut-btn" style={{ gridColumn: "span 2" }} onClick={() => setShowCloseRegister(true)}>Fechar Caixa <span>[ F5 ]</span></button>
           </div>
@@ -1729,7 +1789,7 @@ export default function App() {
 
                       return (
                         <React.Fragment key={v.id}>
-                          <tr style={{ opacity: (isCancelada || isEstornada) ? 0.75 : 1 }}>
+                          <tr style={{ opacity: (isCancelada || isEstornada) ? 0.75 : 1, position: 'relative', zIndex: adminMenuAbertoId === v.id ? 9999 : (expandida ? 2 : 1) }}>
                             <td>
                               <strong style={{ color: 'var(--text)', fontFamily: 'monospace', fontSize: '0.95rem' }}>
                                 #{String(v.id).padStart(6, '0')}
@@ -1791,7 +1851,7 @@ export default function App() {
                             <td style={{ textAlign: 'right', fontWeight: 800, color: isCancelada ? 'var(--danger)' : isEstornada ? 'var(--warning)' : 'var(--accent)', textDecoration: isCancelada ? 'line-through' : 'none' }}>
                               R$ {Number(v.total).toFixed(2).replace('.', ',')}
                             </td>
-                            <td style={{ textAlign: 'center', position: 'relative' }}>
+                            <td style={{ textAlign: 'center', position: 'relative', zIndex: adminMenuAbertoId === v.id ? 9999 : 1 }}>
                               <button
                                 type="button"
                                 onClick={() => setAdminMenuAbertoId(adminMenuAbertoId === v.id ? null : v.id)}
@@ -1822,7 +1882,7 @@ export default function App() {
                                     type="button"
                                     className="danger"
                                     disabled={isCancelada || isEstornada}
-                                    onClick={() => handleCancelarVendaAdmin(v)}
+                                    onClick={() => handleAbrirModalCancelar(v)}
                                   >
                                     ✕ Cancelar Venda
                                   </button>
@@ -1982,6 +2042,111 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CANCELAMENTO DE VENDA (PAINEL ADM) */}
+      {showCancelarModal && (
+        <div className="pix-modal-overlay" style={{ zIndex: 3000 }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', color: 'var(--text)', width: '480px', borderRadius: '16px', overflow: 'hidden', boxShadow: 'var(--shadow)', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)', padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.15)', display: 'grid', placeItems: 'center', color: 'var(--danger)', fontSize: '1.2rem', fontWeight: 800 }}>
+                ✕
+              </div>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', margin: 0, fontWeight: 700, color: 'var(--text)' }}>
+                  Cancelar Venda #{String(showCancelarModal.id).padStart(6, '0')}
+                </h2>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  Total da venda: R$ {Number(showCancelarModal.total || 0).toFixed(2).replace('.', ',')}
+                </span>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmarCancelarVendaAdmin} style={{ textAlign: 'left' }}>
+              <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', padding: '10px 14px', marginBottom: '14px', fontSize: '0.8rem', color: 'var(--danger)', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                ⚠️ O cancelamento anula a venda e estorna os produtos de volta ao estoque.
+              </div>
+
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-soft)', marginBottom: '4px' }}>
+                Motivo do Cancelamento
+              </label>
+              <select
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-input)', color: 'var(--text)', border: '1px solid var(--border-strong)', marginBottom: '12px' }}
+                value={cancelarMotivo}
+                onChange={e => setCancelarMotivo(e.target.value)}
+              >
+                <option value="Desistência do cliente">Desistência do cliente</option>
+                <option value="Erro de digitação / registro duplicado">Erro de digitação / registro duplicado</option>
+                <option value="Produto avariado ou vencido">Produto avariado ou vencido</option>
+                <option value="Cliente sem forma de pagamento aceita">Cliente sem forma de pagamento aceita</option>
+                <option value="Outro motivo">Outro motivo</option>
+              </select>
+
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-soft)', marginBottom: '4px' }}>
+                Observações / Detalhes (opcional)
+              </label>
+              <textarea
+                rows={2}
+                placeholder="Detalhes adicionais do cancelamento..."
+                value={cancelarObs}
+                onChange={e => setCancelarObs(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-input)', color: 'var(--text)', border: '1px solid var(--border-strong)', marginBottom: '16px', resize: 'none' }}
+              />
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCancelarModal(null)}
+                  style={{ flex: 1, padding: '12px', background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: '10px', color: 'var(--text)', cursor: 'pointer', fontWeight: 600 }}
+                  disabled={cancelarLoading}
+                >
+                  Voltar
+                </button>
+                <button
+                  type="submit"
+                  disabled={cancelarLoading}
+                  style={{ flex: 2, padding: '12px', background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  {cancelarLoading ? "Cancelando..." : "Confirmar Cancelamento"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO PARA CANCELAR VENDA ATUAL DO CARRINHO */}
+      {showConfirmarCancelarVendaAtual && (
+        <div className="pix-modal-overlay" style={{ zIndex: 2500 }}>
+          <div style={{ backgroundColor: 'var(--bg-surface)', color: 'var(--text)', width: '420px', borderRadius: '16px', overflow: 'hidden', boxShadow: 'var(--shadow)', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)', padding: '24px', textAlign: 'center' }}>
+            <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', fontSize: '1.5rem', display: 'grid', placeItems: 'center', margin: '0 auto 16px' }}>
+              ✕
+            </div>
+            <h2 style={{ fontSize: '1.2rem', margin: '0 0 8px', fontWeight: 700, color: 'var(--text)' }}>
+              Cancelar Venda Atual?
+            </h2>
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-soft)', margin: '0 0 20px', lineHeight: 1.4 }}>
+              Tem certeza que deseja cancelar a venda atual? Todos os <strong>{totalItems} item(ns)</strong> no valor de <strong>R$ {subtotal.toFixed(2).replace('.', ',')}</strong> serão removidos do carrinho.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setShowConfirmarCancelarVendaAtual(false)}
+                style={{ flex: 1, padding: '12px', background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: '10px', color: 'var(--text)', cursor: 'pointer', fontWeight: 600 }}
+              >
+                Continuar Venda
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmarCancelarVendaAtual}
+                style={{ flex: 1, padding: '12px', background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 700 }}
+                autoFocus
+              >
+                Sim, Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1081,6 +1081,19 @@ export default function App() {
 
   const recarregarTudo = useCallback(() => { carregarDados(); carregarMetricas(); }, [carregarDados, carregarMetricas]);
 
+  // Fecha menu de ações da venda ao clicar fora ou apertar Escape
+  useEffect(() => {
+    if (!menuAbertoId) return;
+    const fechar = () => setMenuAbertoId(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuAbertoId(null); };
+    window.addEventListener('click', fechar);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', fechar);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menuAbertoId]);
+
   const handleLogin = (nome: string) => {
     localStorage.setItem('adm_operatorName', nome);
     setAdminName(nome);
@@ -1509,7 +1522,16 @@ export default function App() {
                         const isEstornada = v.status === 'ESTORNADA';
                         return (
                           <React.Fragment key={v.id}>
-                            <tr className={`row clickable ${aberta ? 'expanded' : ''}`} style={{ animationDelay: `${Math.min(idx, 15) * 20}ms`, opacity: (isCancelada || isEstornada) ? 0.75 : 1 }} onClick={() => setVendaAberta(aberta ? null : v.id)}>
+                            <tr
+                              className={`row clickable ${aberta ? 'expanded' : ''} ${menuAbertoId === v.id ? 'menu-open' : ''}`}
+                              style={{
+                                animationDelay: `${Math.min(idx, 15) * 20}ms`,
+                                opacity: (isCancelada || isEstornada) ? 0.75 : 1,
+                                position: 'relative',
+                                zIndex: menuAbertoId === v.id ? 9999 : (aberta ? 2 : 1)
+                              }}
+                              onClick={() => setVendaAberta(aberta ? null : v.id)}
+                            >
                               <td><ChevronRight size={16} className={`chev ${aberta ? 'open' : ''}`} /></td>
                               <td className="strong num">#{String(v.id).padStart(6, '0')}</td>
                               <td className="num">{dataHora(v.criado_em)}</td>
@@ -1544,13 +1566,16 @@ export default function App() {
                               <td className="right num" style={{ color: isCancelada ? 'var(--danger)' : isEstornada ? 'var(--warning)' : 'var(--accent)', fontWeight: 800, textDecoration: isCancelada ? 'line-through' : 'none' }}>
                                 {brl(v.total)}
                               </td>
-                              <td className="center" style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+                              <td className="center" style={{ position: 'relative', zIndex: menuAbertoId === v.id ? 9999 : 1 }} onClick={e => e.stopPropagation()}>
                                 <button
                                   id={`btn-acoes-venda-${v.id}`}
                                   type="button"
                                   className="btn btn-ghost btn-sm"
                                   style={{ padding: '6px 8px' }}
-                                  onClick={() => setMenuAbertoId(menuAbertoId === v.id ? null : v.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMenuAbertoId(menuAbertoId === v.id ? null : v.id);
+                                  }}
                                   title="Ações da venda"
                                 >
                                   <MoreVertical size={16} />
@@ -1560,13 +1585,13 @@ export default function App() {
                                     style={{
                                       position: 'absolute',
                                       right: 8,
-                                      top: '100%',
-                                      zIndex: 99,
-                                      background: 'var(--bg-surface)',
-                                      border: '1px solid var(--border)',
+                                      ...(idx >= Math.max(1, vendasFiltradas.length - 2) ? { bottom: 'calc(100% + 4px)' } : { top: 'calc(100% + 4px)' }),
+                                      zIndex: 99999,
+                                      background: 'var(--bg-surface-2)',
+                                      border: '1px solid var(--border-strong)',
                                       borderRadius: 8,
-                                      boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
-                                      minWidth: 190,
+                                      boxShadow: '0 16px 40px rgba(0,0,0,0.65), 0 4px 12px rgba(0,0,0,0.4)',
+                                      minWidth: 195,
                                       padding: 6,
                                       display: 'flex',
                                       flexDirection: 'column',
