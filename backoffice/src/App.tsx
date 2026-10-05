@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Users, Package, LayoutDashboard, LogOut, Receipt, Sun, Moon, Search, ChevronRight,
   TrendingUp, Wallet, ShoppingCart, Trophy, PiggyBank, TriangleAlert, Boxes, Store,
-  ArrowDownToLine, ArrowUpFromLine, Lock, ArrowUpDown, Ticket
+  ArrowDownToLine, ArrowUpFromLine, Lock, ArrowUpDown, Ticket, Eye, EyeOff
 } from 'lucide-react';
 
 const DEFAULT_API = 'https://api-tailandia.onrender.com';
@@ -82,6 +82,7 @@ function ThemeToggle({ tema, onToggle, className = '' }: { tema: Tema; onToggle:
 function LoginScreen({ onLogin, tema, onToggleTema }: { onLogin: (nome: string) => void; tema: Tema; onToggleTema: () => void }) {
   const [matricula, setMatricula] = useState('');
   const [senha, setSenha] = useState('');
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState('');
   const [entrando, setEntrando] = useState(false);
 
@@ -109,6 +110,13 @@ function LoginScreen({ onLogin, tema, onToggleTema }: { onLogin: (nome: string) 
     }
   };
 
+  const onEnter = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSubmit(e as any);
+    }
+  };
+
   return (
     <main className="login-bg">
       <div className="floating-toggle"><ThemeToggle tema={tema} onToggle={onToggleTema} /></div>
@@ -117,8 +125,48 @@ function LoginScreen({ onLogin, tema, onToggleTema }: { onLogin: (nome: string) 
         <h1>Acesso Restrito</h1>
         <p>Retaguarda • Tailândia Distribuidora</p>
         {erro && <div className="login-error">{erro}</div>}
-        <input id="login-matricula" className="input" type="text" placeholder="Matrícula (ex: 00001)" maxLength={5} value={matricula} onChange={e => setMatricula(e.target.value)} />
-        <input id="login-senha" className="input" type="password" placeholder="Senha" value={senha} onChange={e => setSenha(e.target.value)} />
+        <input
+          id="login-matricula"
+          className="input"
+          type="text"
+          placeholder="Matrícula (ex: 00001)"
+          maxLength={5}
+          value={matricula}
+          onChange={e => setMatricula(e.target.value)}
+          onKeyDown={onEnter}
+        />
+        <div style={{ position: 'relative', width: '100%' }}>
+          <input
+            id="login-senha"
+            className="input"
+            type={mostrarSenha ? "text" : "password"}
+            placeholder="Senha"
+            value={senha}
+            onChange={e => setSenha(e.target.value)}
+            onKeyDown={onEnter}
+            style={{ paddingRight: '42px', width: '100%' }}
+          />
+          <button
+            type="button"
+            onClick={() => setMostrarSenha(v => !v)}
+            style={{
+              position: 'absolute',
+              right: '12px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              padding: 0
+            }}
+            title={mostrarSenha ? "Ocultar senha" : "Ver senha"}
+          >
+            {mostrarSenha ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        </div>
         <button id="login-entrar" type="submit" className="btn btn-primary" disabled={entrando} style={{ width: '100%', justifyContent: 'center', padding: 13, marginTop: 8 }}>
           {entrando ? 'Entrando...' : 'Entrar no painel'}
         </button>
@@ -171,15 +219,34 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
     }
   };
 
+  const onEnter = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSave();
+    }
+  };
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <h3>{produto ? 'Editar Produto' : 'Novo Produto'}</h3>
-        <div className="field"><label className="label">Código de Barras (EAN)</label><input id="prod-ean" className="input" value={ean} onChange={e => setEan(e.target.value)} /></div>
-        <div className="field"><label className="label">Nome do Produto</label><input id="prod-nome" className="input" value={nome} onChange={e => setNome(e.target.value)} /></div>
+        <div className="field">
+          <label className="label">Código de Barras (EAN)</label>
+          <input id="prod-ean" className="input" value={ean} onChange={e => setEan(e.target.value)} onKeyDown={onEnter} />
+        </div>
+        <div className="field">
+          <label className="label">Nome do Produto</label>
+          <input id="prod-nome" className="input" value={nome} onChange={e => setNome(e.target.value)} onKeyDown={onEnter} />
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div className="field"><label className="label">Preço de Custo (R$)</label><input id="prod-custo" className="input" inputMode="decimal" placeholder="0,00" value={precoCusto} onChange={e => setPrecoCusto(e.target.value)} /></div>
-          <div className="field"><label className="label">Preço de Venda (R$)</label><input id="prod-venda" className="input" inputMode="decimal" placeholder="0,00" value={precoVenda} onChange={e => setPrecoVenda(e.target.value)} /></div>
+          <div className="field">
+            <label className="label">Preço de Custo (R$)</label>
+            <input id="prod-custo" className="input" inputMode="decimal" placeholder="0,00" value={precoCusto} onChange={e => setPrecoCusto(e.target.value)} onKeyDown={onEnter} />
+          </div>
+          <div className="field">
+            <label className="label">Preço de Venda (R$)</label>
+            <input id="prod-venda" className="input" inputMode="decimal" placeholder="0,00" value={precoVenda} onChange={e => setPrecoVenda(e.target.value)} onKeyDown={onEnter} />
+          </div>
         </div>
         {Number.isFinite(margem) && (
           <div className={`hint ${margem >= 0 ? 'green' : 'red'}`} style={{ marginTop: -6, marginBottom: 12 }}>
@@ -188,7 +255,7 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
         )}
         <div className="field">
           <label className="label">{produto ? 'Quantidade em Estoque' : 'Estoque Inicial (entrada)'}</label>
-          <input id="prod-estoque" className="input" type="number" min="0" value={estoque} onChange={e => setEstoque(e.target.value)} />
+          <input id="prod-estoque" className="input" type="number" min="0" value={estoque} onChange={e => setEstoque(e.target.value)} onKeyDown={onEnter} />
           {diffEstoque > 0 && <div className="hint green">+{int(diffEstoque)} un. serão registradas como {produto ? 'reposição' : 'entrada'} • investimento de {brl(diffEstoque * custoN)}</div>}
           {diffEstoque < 0 && <div className="hint red">{int(diffEstoque)} un. serão registradas como ajuste/perda de estoque</div>}
         </div>
@@ -207,6 +274,7 @@ function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
   const [nome, setNome] = useState(funcionario?.nome || '');
   const [cpf, setCpf] = useState(funcionario?.cpf || '');
   const [senha, setSenha] = useState('');
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [nivel, setNivel] = useState(funcionario?.nivel_acesso || 'CAIXA');
   const [status, setStatus] = useState(funcionario?.status || 'ATIVO');
   const [salvando, setSalvando] = useState(false);
@@ -232,14 +300,49 @@ function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
       if (senha && senha.trim()) {
         payload.senha = senha.trim();
       }
-      const res = await fetch(funcionario ? `${api}/admin/funcionarios/${funcionario.id}` : `${api}/admin/funcionarios`, {
-        method: funcionario ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Erro ao salvar funcionário.');
+
+      if (funcionario) {
+        if (senha && senha.trim()) {
+          // Quando uma nova senha é definida, recria o funcionário para garantir que o hash da nova senha
+          // seja gravado no banco de dados imediatamente (inclusive na API da nuvem).
+          const delRes = await fetch(`${api}/admin/funcionarios/${funcionario.id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!delRes.ok) throw new Error('Erro ao atualizar credenciais do funcionário.');
+
+          const postRes = await fetch(`${api}/admin/funcionarios`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(payload)
+          });
+          if (!postRes.ok) {
+            const data = await postRes.json().catch(() => ({}));
+            throw new Error(data.error || 'Erro ao registrar nova senha.');
+          }
+        } else {
+          // Atualização de dados cadastrais sem alterar senha
+          const res = await fetch(`${api}/admin/funcionarios/${funcionario.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || 'Erro ao salvar funcionário.');
+          }
+        }
+      } else {
+        // Novo funcionário
+        const res = await fetch(`${api}/admin/funcionarios`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Erro ao cadastrar funcionário.');
+        }
       }
       onSaved();
       onClose();
@@ -247,6 +350,13 @@ function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
       alert(e.message);
     } finally {
       setSalvando(false);
+    }
+  };
+
+  const onEnter = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSave();
     }
   };
 
@@ -260,23 +370,23 @@ function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
         </div>
         <div className="field">
           <label className="label">Nome Completo</label>
-          <input id="func-nome" className="input" value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: João Silva" />
+          <input id="func-nome" className="input" value={nome} onChange={e => setNome(e.target.value)} onKeyDown={onEnter} placeholder="Ex: João Silva" />
         </div>
         <div className="field">
           <label className="label">CPF</label>
-          <input id="func-cpf" className="input" value={cpf} onChange={e => setCpf(e.target.value)} placeholder="000.000.000-00" />
+          <input id="func-cpf" className="input" value={cpf} onChange={e => setCpf(e.target.value)} onKeyDown={onEnter} placeholder="000.000.000-00" />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div className="field">
             <label className="label">Nível de Acesso</label>
-            <select id="func-nivel" className="input" value={nivel} onChange={e => setNivel(e.target.value)}>
+            <select id="func-nivel" className="input" value={nivel} onChange={e => setNivel(e.target.value)} onKeyDown={onEnter}>
               <option value="CAIXA">Caixa (PDV)</option>
               <option value="ADMIN">Administrador (Retaguarda)</option>
             </select>
           </div>
           <div className="field">
             <label className="label">Status</label>
-            <select id="func-status" className="input" value={status} onChange={e => setStatus(e.target.value)}>
+            <select id="func-status" className="input" value={status} onChange={e => setStatus(e.target.value)} onKeyDown={onEnter}>
               <option value="ATIVO">Ativo</option>
               <option value="INATIVO">Inativo</option>
             </select>
@@ -284,14 +394,38 @@ function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
         </div>
         <div className="field">
           <label className="label">{funcionario ? 'Alterar Senha de Acesso (opcional)' : 'Senha de Acesso (obrigatória)'}</label>
-          <input
-            id="func-senha"
-            className="input"
-            type="password"
-            placeholder={funcionario ? 'Deixe em branco para manter a senha atual' : 'Digite a senha do funcionário'}
-            value={senha}
-            onChange={e => setSenha(e.target.value)}
-          />
+          <div style={{ position: 'relative', width: '100%' }}>
+            <input
+              id="func-senha"
+              className="input"
+              type={mostrarSenha ? "text" : "password"}
+              placeholder={funcionario ? 'Deixe em branco para manter a senha atual' : 'Digite a senha do funcionário'}
+              value={senha}
+              onChange={e => setSenha(e.target.value)}
+              onKeyDown={onEnter}
+              style={{ paddingRight: '42px', width: '100%' }}
+            />
+            <button
+              type="button"
+              onClick={() => setMostrarSenha(v => !v)}
+              style={{
+                position: 'absolute',
+                right: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                padding: 0
+              }}
+              title={mostrarSenha ? "Ocultar senha" : "Ver senha"}
+            >
+              {mostrarSenha ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
         </div>
         <div className="modal-actions">
           <button onClick={onClose} disabled={salvando} className="btn btn-ghost">Cancelar</button>
@@ -355,6 +489,13 @@ function ModalEntradaEstoque({ produtos, onClose, onSaved }: { produtos: any[]; 
     }
   };
 
+  const onEnter = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSave();
+    }
+  };
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
@@ -365,7 +506,7 @@ function ModalEntradaEstoque({ produtos, onClose, onSaved }: { produtos: any[]; 
 
         <div className="field">
           <label className="label">Produto</label>
-          <select className="input" value={selectedEan} onChange={e => setSelectedEan(e.target.value)}>
+          <select className="input" value={selectedEan} onChange={e => setSelectedEan(e.target.value)} onKeyDown={onEnter}>
             {produtos.map(p => (
               <option key={p.id} value={p.ean}>
                 {p.nome} (Atual: {p.estoque_atual} un. • EAN: {p.ean})
@@ -385,6 +526,7 @@ function ModalEntradaEstoque({ produtos, onClose, onSaved }: { produtos: any[]; 
               placeholder="Ex: 50"
               value={qtd}
               onChange={e => setQtd(e.target.value)}
+              onKeyDown={onEnter}
             />
           </div>
           <div className="field">
@@ -396,6 +538,7 @@ function ModalEntradaEstoque({ produtos, onClose, onSaved }: { produtos: any[]; 
               placeholder="0,00"
               value={custo}
               onChange={e => setCusto(e.target.value)}
+              onKeyDown={onEnter}
             />
           </div>
         </div>

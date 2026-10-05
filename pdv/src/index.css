@@ -430,7 +430,7 @@ body, .pos-left, .totals-panel, .input-panel, .cart-item, .shortcut-btn, .pix-mo
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.login-card button {
+.login-card button[type="submit"] {
   width: 100%;
   padding: 14px;
   background: var(--accent);
@@ -442,15 +442,39 @@ body, .pos-left, .totals-panel, .input-panel, .cart-item, .shortcut-btn, .pix-mo
   transition: all 0.2s;
   box-shadow: 0 4px 14px var(--accent-glow);
 }
-.login-card button:hover:not(:disabled) {
+.login-card button[type="submit"]:hover:not(:disabled) {
   background: var(--accent-strong);
   transform: translateY(-1px);
 }
-.login-card button:disabled {
+.login-card button[type="submit"]:disabled {
   background: var(--border-strong);
   color: var(--text-muted);
   box-shadow: none;
   cursor: not-allowed;
+}
+
+.eye-toggle-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent !important;
+  border: none !important;
+  color: var(--text-muted) !important;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px !important;
+  width: auto !important;
+  height: auto !important;
+  box-shadow: none !important;
+  transition: color 0.2s;
+}
+.eye-toggle-btn:hover {
+  color: var(--text) !important;
+  background: transparent !important;
+  transform: translateY(-50%) !important;
 }
 
 .floating-toggle {

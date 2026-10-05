@@ -39,6 +39,7 @@ export default function App() {
   const [operatorName, setOperatorName] = useState(() => sessionStorage.getItem('pdv_operatorName') || "");
   const [matricula, setMatricula] = useState("");
   const [senha, setSenha] = useState("");
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Tema
@@ -129,50 +130,143 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Sair do modal de Exit
-      if (showExitModal && e.key === "Escape") { e.preventDefault(); setShowExitModal(false); return; }
-      
-      // Tela de fechamento
-      if (showCloseRegister) {
-        if (e.key === "F5") { e.preventDefault(); handleCloseRegister(); }
-        if (e.key === "Escape") { e.preventDefault(); setShowCloseRegister(false); }
-        return;
-      }
-
-      // Tela de recebimento
-      if (showRecebimento) {
-        if (!showPix && !showCard && !showPosAuth && !alertMsg && !printPrompt) {
-          if (e.key === "F2") { e.preventDefault(); if (resta > 0) setShowCard(true); }
-          if (e.key === "F4") { e.preventDefault(); if (resta > 0) addPayment('Dinheiro'); }
-          if (e.key === "F6") { e.preventDefault(); if (resta > 0) setShowPosAuth(true); }
-          if (e.key === "F8") { e.preventDefault(); if (resta > 0) setShowPix(true); }
-          if (e.key === "F10") {
-            e.preventDefault();
-            if (resta <= 0) finalizarVenda();
-            else setAlertMsg("O valor total da venda não foi atingido.");
-          }
-          if (e.key === "Escape") { e.preventDefault(); setShowRecebimento(false); }
+      // 1. Alertas
+      if (alertMsg) {
+        if (e.key === "Enter" || e.key === "Escape") {
+          e.preventDefault();
+          setAlertMsg("");
         }
         return;
       }
 
-      // Alertas e Print
-      if (alertMsg && e.key === "Enter") { e.preventDefault(); setAlertMsg(""); return; }
-      if (printPrompt && e.key === "Enter") { 
-        e.preventDefault(); 
-        setLastReceipt(printPrompt.receiptData); 
-        setPrintPrompt(null);
-        setTimeout(() => { executePrint(); setTimeout(() => setLastReceipt(null), 1000); }, 100);
-        return;
-      }
-      if (printPrompt && e.key === "Escape") {
-        e.preventDefault();
-        setLastReceipt(printPrompt.receiptData); setTimeout(() => setLastReceipt(null), 100); setPrintPrompt(null);
+      // 2. Confirmação de Impressão (Print Prompt)
+      if (printPrompt) {
+        if (e.key === "Enter") { 
+          e.preventDefault(); 
+          setLastReceipt(printPrompt.receiptData); 
+          setPrintPrompt(null);
+          setTimeout(() => { executePrint(); setTimeout(() => setLastReceipt(null), 1000); }, 100);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setLastReceipt(printPrompt.receiptData);
+          setTimeout(() => setLastReceipt(null), 100);
+          setPrintPrompt(null);
+          return;
+        }
         return;
       }
 
-      // Main Screen
-      if (isAuthenticated && !alertMsg && !printPrompt) {
+      // 3. Modal POS Auth
+      if (showPosAuth) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          if (posAuthCode.trim() !== "") {
+            addPayment('POS', posAuthCode);
+            setShowPosAuth(false);
+            setPosAuthCode("");
+          } else {
+            setAlertMsg("O código de autorização é obrigatório para POS.");
+          }
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowPosAuth(false);
+          setPosAuthCode("");
+          return;
+        }
+        return;
+      }
+
+      // 4. Modal PIX
+      if (showPix) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addPayment('PIX');
+          setShowPix(false);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowPix(false);
+          return;
+        }
+        return;
+      }
+
+      // 5. Modal Cartão / TEF
+      if (showCard) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addPayment(cardType === 'CARTAO_CREDITO' ? 'TEF_Crédito' : 'TEF_Débito');
+          setShowCard(false);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowCard(false);
+          return;
+        }
+        return;
+      }
+
+      // 6. Modal de Fechamento de Caixa
+      if (showCloseRegister) {
+        if (e.key === "Enter" || e.key === "F5") {
+          e.preventDefault();
+          handleCloseRegister();
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowCloseRegister(false);
+          return;
+        }
+        return;
+      }
+
+      // 7. Modal de Saída do PDV
+      if (showExitModal) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          window.close();
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowExitModal(false);
+          return;
+        }
+        return;
+      }
+
+      // 8. Tela de Recebimento
+      if (showRecebimento) {
+        if (e.key === "F2") { e.preventDefault(); if (resta > 0) setShowCard(true); return; }
+        if (e.key === "F4") { e.preventDefault(); if (resta > 0) addPayment('Dinheiro'); return; }
+        if (e.key === "F6") { e.preventDefault(); if (resta > 0) setShowPosAuth(true); return; }
+        if (e.key === "F8") { e.preventDefault(); if (resta > 0) setShowPix(true); return; }
+        if (e.key === "F10" || e.key === "Enter") {
+          e.preventDefault();
+          if (resta <= 0) {
+            finalizarVenda();
+          } else {
+            addPayment('Dinheiro');
+          }
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowRecebimento(false);
+          return;
+        }
+        return;
+      }
+
+      // 9. Tela Principal (Balcão do Caixa)
+      if (isAuthenticated) {
         if (e.key === "F3") { e.preventDefault(); if (cart.length > 0) setShowRecebimento(true); return; }
         if (e.key === "F4") { e.preventDefault(); cancelarVenda(); return; }
         if (e.key === "F5") { e.preventDefault(); setShowCloseRegister(true); return; }
@@ -183,7 +277,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     isAuthenticated, showExitModal, showCloseRegister, showRecebimento, 
-    showPix, showCard, showPosAuth, alertMsg, printPrompt, cart, resta
+    showPix, showCard, showPosAuth, alertMsg, printPrompt, cart, resta,
+    posAuthCode, cardType, paymentValue
   ]);
 
   const handleBarcodeSubmit = async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -286,6 +381,13 @@ export default function App() {
   };
 
   if (!isAuthenticated) {
+    const onEnterLogin = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleLogin(e as any);
+      }
+    };
+
     return (
       <div className="login-bg">
         <div className="floating-toggle">
@@ -298,8 +400,42 @@ export default function App() {
         </div>
         <form onSubmit={handleLogin} className="login-card">
           <h2>🔒 ACESSO RESTRITO (PDV)</h2>
-          <input type="text" placeholder="Matrícula (Ex: 12345)" maxLength={5} value={matricula} onChange={e => setMatricula(e.target.value)} />
-          <input type="password" placeholder="Senha" value={senha} onChange={e => setSenha(e.target.value)} />
+          <input
+            type="text"
+            placeholder="Matrícula (Ex: 12345)"
+            maxLength={5}
+            value={matricula}
+            onChange={e => setMatricula(e.target.value)}
+            onKeyDown={onEnterLogin}
+          />
+          <div style={{ position: 'relative', width: '100%', marginBottom: '12px' }}>
+            <input
+              type={mostrarSenha ? "text" : "password"}
+              placeholder="Senha"
+              value={senha}
+              onChange={e => setSenha(e.target.value)}
+              onKeyDown={onEnterLogin}
+              style={{ width: '100%', paddingRight: '44px', marginBottom: 0 }}
+            />
+            <button
+              type="button"
+              className="eye-toggle-btn"
+              onClick={() => setMostrarSenha(v => !v)}
+              title={mostrarSenha ? "Ocultar senha" : "Ver senha"}
+            >
+              {mostrarSenha ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              )}
+            </button>
+          </div>
           <button type="submit" disabled={isLoggingIn}>
             {isLoggingIn ? "ACORDANDO SERVIDOR (PODE LEVAR 50s)..." : "ENTRAR NO CAIXA"}
           </button>
@@ -382,12 +518,40 @@ export default function App() {
 
                 <div style={{ marginBottom: '15px', border: '1px solid var(--border)', padding: '15px', borderRadius: '12px' }}>
                   <label style={{ display: "block", marginBottom: "0.5rem", color: "var(--text-muted)" }}>CPF/CNPJ na Nota (Opcional)</label>
-                  <input type="text" placeholder="Apenas números..." value={cpfCnpj} onChange={(e) => setCpfCnpj(e.target.value)} style={{ width: '100%', padding: '10px', fontSize: '1.1rem', borderRadius: '8px', border: '1px solid var(--border-strong)', backgroundColor: 'var(--bg-input)', color: 'var(--text)', marginBottom: '15px', outline: 'none' }} />
+                  <input
+                    type="text"
+                    placeholder="Apenas números..."
+                    value={cpfCnpj}
+                    onChange={(e) => setCpfCnpj(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        recebimentoInputRef.current?.focus();
+                      }
+                    }}
+                    style={{ width: '100%', padding: '10px', fontSize: '1.1rem', borderRadius: '8px', border: '1px solid var(--border-strong)', backgroundColor: 'var(--bg-input)', color: 'var(--text)', marginBottom: '15px', outline: 'none' }}
+                  />
                   
                   <label style={{ display: 'block', marginBottom: '10px', color: 'var(--text-muted)' }}>Valor do Pagamento</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
                     <span style={{ color: 'var(--text-soft)' }}>Valor R$:</span>
-                    <input ref={recebimentoInputRef} type="text" value={paymentValue} onChange={e => setPaymentValue(e.target.value)} style={{ flex: 1, padding: '10px', fontSize: '1.1rem', textAlign: 'right', borderRadius: '8px', border: '1px solid var(--border-strong)', backgroundColor: 'var(--bg-input)', color: 'var(--text)', outline: 'none' }} />
+                    <input
+                      ref={recebimentoInputRef}
+                      type="text"
+                      value={paymentValue}
+                      onChange={e => setPaymentValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (resta <= 0) {
+                            finalizarVenda();
+                          } else {
+                            addPayment('Dinheiro');
+                          }
+                        }
+                      }}
+                      style={{ flex: 1, padding: '10px', fontSize: '1.1rem', textAlign: 'right', borderRadius: '8px', border: '1px solid var(--border-strong)', backgroundColor: 'var(--bg-input)', color: 'var(--text)', outline: 'none' }}
+                    />
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <button className="shortcut-btn" style={{ fontSize: '0.85rem', padding: '10px' }} onClick={() => resta > 0 && setShowCard(true)}>TEF (F2)</button>
@@ -437,7 +601,25 @@ export default function App() {
             <h2>POS (Máquina Externa)</h2>
             <div style={{ margin: '20px 0', textAlign: 'left' }}>
               <label style={{ display: 'block', marginBottom: '10px', fontWeight: 'bold', color: 'var(--text-soft)' }}>Código de Autorização (NSU/Aut):</label>
-              <input autoFocus type="text" value={posAuthCode} onChange={e => setPosAuthCode(e.target.value)} style={{ width: '100%', padding: '10px', fontSize: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-strong)', backgroundColor: 'var(--bg-input)', color: 'var(--text)', outline: 'none' }} />
+              <input
+                autoFocus
+                type="text"
+                value={posAuthCode}
+                onChange={e => setPosAuthCode(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (posAuthCode.trim() !== '') {
+                      addPayment('POS', posAuthCode);
+                      setShowPosAuth(false);
+                      setPosAuthCode('');
+                    } else {
+                      setAlertMsg('O código de autorização é obrigatório para POS.');
+                    }
+                  }
+                }}
+                style={{ width: '100%', padding: '10px', fontSize: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-strong)', backgroundColor: 'var(--bg-input)', color: 'var(--text)', outline: 'none' }}
+              />
             </div>
             <div className="pix-actions">
               <button className="btn-cancel" onClick={() => { setShowPosAuth(false); setPosAuthCode(""); }}>Cancelar</button>
