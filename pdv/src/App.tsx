@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 interface CartItem { id: string; ean: string; name: string; quantity: number; unitPrice: number; }
 interface Payment { id: string; method: string; value: number; authCode?: string; }
@@ -81,12 +81,48 @@ export default function App() {
   const [estornoObs, setEstornoObs] = useState("");
   const [estornoLoading, setEstornoLoading] = useState(false);
 
+  // Catálogo de Produtos para Busca Inteligente (Nome / Descrição / EAN)
+  const [catalogoProdutos, setCatalogoProdutos] = useState<any[]>(() => {
+    try {
+      const c = localStorage.getItem('pdv_catalogo_cache');
+      return c ? JSON.parse(c) : [];
+    } catch { return []; }
+  });
+  const [sugestoesIndex, setSugestoesIndex] = useState<number>(0);
+  const [showSugestoes, setShowSugestoes] = useState<boolean>(false);
+
+  // Módulo de Cancelamento / Remoção de Item do Carrinho
+  const [itemParaRemover, setItemParaRemover] = useState<CartItem | null>(null);
+  const [qtdRemoverInput, setQtdRemoverInput] = useState<number>(1);
+
   // Tema
   const [theme, setTheme] = useState(() => localStorage.getItem('pdv_theme') || 'dark');
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  // Listener para retorno de impressão do Electron
+  useEffect(() => {
+    // @ts-ignore
+    if (window.require) {
+      try {
+        // @ts-ignore
+        const { ipcRenderer } = window.require('electron');
+        const handlePrintCompleted = (_: any, data: any) => {
+          if (data && !data.success) {
+            console.warn("[PDV] Retorno da impressora:", data.failureReason);
+          }
+          // Remove o cupom do DOM de forma suave após a conclusão do trabalho
+          setTimeout(() => setLastReceipt(null), 1200);
+        };
+        ipcRenderer.on('print-completed', handlePrintCompleted);
+        return () => {
+          ipcRenderer.removeListener('print-completed', handlePrintCompleted);
+        };
+      } catch { /* modo web */ }
+    }
+  }, []);
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
@@ -97,9 +133,14 @@ export default function App() {
   const executePrint = () => {
     // @ts-ignore
     if (window.require) {
-      // @ts-ignore
-      const { ipcRenderer } = window.require('electron');
-      ipcRenderer.send('print-silent');
+      try {
+        // @ts-ignore
+        const { ipcRenderer } = window.require('electron');
+        ipcRenderer.send('print-silent');
+      } catch (err) {
+        console.error("Falha ao comunicar com IPC de impressão:", err);
+        window.print();
+      }
     } else {
       window.print();
     }
@@ -167,6 +208,20 @@ export default function App() {
 
 
 
+  const handleFecharPainelAdm = () => {
+    setShowAdminPanel(false);
+    setAdminMenuAbertoId(null);
+    setAdminVendaExpandida(null);
+    // Limpa credenciais de administrador da sessão para exigir autenticação sempre que reabrir
+    setAdminToken("");
+    setAdminName("");
+    setAdminAuthMatricula("");
+    setAdminAuthSenha("");
+    setAdminAuthError("");
+    sessionStorage.removeItem('pdv_adminToken');
+    sessionStorage.removeItem('pdv_adminName');
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // 1. Alertas
@@ -174,6 +229,16 @@ export default function App() {
         if (e.key === "Enter" || e.key === "Escape") {
           e.preventDefault();
           setAlertMsg("");
+        }
+        return;
+      }
+
+      // Modal de Remoção / Cancelamento de Item
+      if (itemParaRemover) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setItemParaRemover(null);
+          return;
         }
         return;
       }
@@ -191,8 +256,7 @@ export default function App() {
       if (showAdminPanel) {
         if (e.key === "Escape") {
           e.preventDefault();
-          setShowAdminPanel(false);
-          setAdminMenuAbertoId(null);
+          handleFecharPainelAdm();
           return;
         }
         return;
@@ -214,13 +278,12 @@ export default function App() {
           e.preventDefault(); 
           setLastReceipt(printPrompt.receiptData); 
           setPrintPrompt(null);
-          setTimeout(() => { executePrint(); setTimeout(() => setLastReceipt(null), 1000); }, 100);
+          setTimeout(() => { executePrint(); setTimeout(() => setLastReceipt(null), 4000); }, 100);
           return;
         }
         if (e.key === "Escape") {
           e.preventDefault();
-          setLastReceipt(printPrompt.receiptData);
-          setTimeout(() => setLastReceipt(null), 100);
+          setLastReceipt(null);
           setPrintPrompt(null);
           return;
         }
@@ -347,16 +410,146 @@ export default function App() {
   }, [
     isAuthenticated, showExitModal, showCloseRegister, showRecebimento, 
     showPix, showCard, showPosAuth, alertMsg, printPrompt, cart, resta,
-    posAuthCode, cardType, paymentValue, showAdminAuthModal, showAdminPanel, showEstornoModal
+    posAuthCode, cardType, paymentValue, showAdminAuthModal, showAdminPanel, showEstornoModal,
+    itemParaRemover
   ]);
 
-  const handleBarcodeSubmit = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+  // ---------- CARREGAMENTO DO CATÁLOGO DE PRODUTOS ----------
+  const carregarCatalogo = useCallback(async () => {
+    try {
+      const token = sessionStorage.getItem('pdv_token');
+      const headers: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const res = await fetch(`${apiUrl}/admin/produtos`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setCatalogoProdutos(data);
+          localStorage.setItem('pdv_catalogo_cache', JSON.stringify(data));
+          return;
+        }
+      }
+      // Tenta rota pública /produtos
+      const resAlt = await fetch(`${apiUrl}/produtos`);
+      if (resAlt.ok) {
+        const dataAlt = await resAlt.json();
+        if (Array.isArray(dataAlt) && dataAlt.length > 0) {
+          setCatalogoProdutos(dataAlt);
+          localStorage.setItem('pdv_catalogo_cache', JSON.stringify(dataAlt));
+        }
+      }
+    } catch {
+      // Falha de rede: mantém catálogo que já estava em memória/cache
+    }
+  }, [apiUrl]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      carregarCatalogo();
+    }
+  }, [isAuthenticated, carregarCatalogo]);
+
+  // Produtos sugeridos para a barra de pesquisa/bipagem por nome ou código
+  const produtosSugeridos = useMemo(() => {
+    const termo = barcode.trim().toLowerCase();
+    if (!termo || termo.length < 2) return [];
+    return catalogoProdutos.filter(p => {
+      const nome = (p.nome || '').toLowerCase();
+      const ean = (p.ean || '').toLowerCase();
+      return nome.includes(termo) || ean.includes(termo);
+    }).slice(0, 12);
+  }, [barcode, catalogoProdutos]);
+
+  // Adiciona produto ao carrinho com checagem de estoque
+  const adicionarProdutoAoCarrinho = (dbProduct: any) => {
+    const code = String(dbProduct.ean || '').trim();
+    const existingItem = cart.find(item => item.ean === code);
+    const currentQty = existingItem ? existingItem.quantity : 0;
+    const estoque = Number(dbProduct.estoque_atual ?? 99999);
+
+    if (currentQty + 1 > estoque) {
+      setAlertMsg(`Produto "${dbProduct.nome}" sem estoque disponível (${estoque} un)!`);
+      return;
+    }
+
+    const price = Number(dbProduct.preco_venda || 0);
+    setCart((prev) => {
+      if (existingItem) {
+        return prev.map(item => item.ean === code ? { ...item, quantity: item.quantity + 1 } : item);
+      }
+      return [...prev, {
+        id: Math.random().toString(36).substr(2, 9),
+        ean: code,
+        name: dbProduct.nome,
+        quantity: 1,
+        unitPrice: price
+      }];
+    });
+
+    setBarcode("");
+    setShowSugestoes(false);
+    setSugestoesIndex(0);
+    inputRef.current?.focus();
+  };
+
+  const handleBarcodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setBarcode(val);
+    setSugestoesIndex(0);
+    if (val.trim().length >= 2) {
+      setShowSugestoes(true);
+    } else {
+      setShowSugestoes(false);
+    }
+  };
+
+  const handleBarcodeKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      if (produtosSugeridos.length > 0) {
+        e.preventDefault();
+        setShowSugestoes(true);
+        setSugestoesIndex(prev => (prev + 1) % produtosSugeridos.length);
+        return;
+      }
+    }
+
+    if (e.key === "ArrowUp") {
+      if (produtosSugeridos.length > 0) {
+        e.preventDefault();
+        setShowSugestoes(true);
+        setSugestoesIndex(prev => (prev - 1 + produtosSugeridos.length) % produtosSugeridos.length);
+        return;
+      }
+    }
+
+    if (e.key === "Escape") {
+      if (showSugestoes) {
+        e.preventDefault();
+        setShowSugestoes(false);
+        return;
+      }
+    }
+
     if (e.key === "Enter") {
       e.preventDefault();
       const code = barcode.trim();
-      setBarcode("");
       if (!code) return;
 
+      // 1. Se sugestão estiver aberta e selecionada
+      if (showSugestoes && produtosSugeridos.length > 0 && sugestoesIndex >= 0 && sugestoesIndex < produtosSugeridos.length) {
+        adicionarProdutoAoCarrinho(produtosSugeridos[sugestoesIndex]);
+        return;
+      }
+
+      // 2. Se for um código de barras direto no catálogo em memória
+      const matchLocal = catalogoProdutos.find(p => p.ean === code);
+      if (matchLocal) {
+        adicionarProdutoAoCarrinho(matchLocal);
+        return;
+      }
+
+      // 3. Fallback: Consulta direta na API para o caso de produto recém-cadastrado no Backoffice
+      setBarcode("");
+      setShowSugestoes(false);
       try {
         const token = sessionStorage.getItem('pdv_token');
         const response = await fetch(`${apiUrl}/produtos/${code}`, {
@@ -367,25 +560,49 @@ export default function App() {
         
         if (response.ok) {
           const dbProduct = await response.json();
-          
-          const existingItem = cart.find(item => item.ean === code);
-          const currentQty = existingItem ? existingItem.quantity : 0;
-          
-          if (currentQty + 1 > dbProduct.estoque_atual) {
-            setAlertMsg("Produto sem estoque disponível!");
-            return;
-          }
-
-          const product = { name: dbProduct.nome, price: Number(dbProduct.preco_venda) };
-          setCart((prev) => {
-            if (existingItem) return prev.map(item => item.ean === code ? { ...item, quantity: item.quantity + 1 } : item);
-            return [...prev, { id: Math.random().toString(36).substr(2, 9), ean: code, name: product.name, quantity: 1, unitPrice: product.price }];
-          });
+          adicionarProdutoAoCarrinho(dbProduct);
+          // Adiciona ao catálogo local
+          setCatalogoProdutos(prev => [...prev.filter(p => p.ean !== dbProduct.ean), dbProduct]);
         } else {
-          setAlertMsg("Produto não encontrado!");
+          setAlertMsg("Produto não encontrado por código ou nome!");
         }
-      } catch (err) { setAlertMsg("Ops! O PDV perdeu conexão com o Banco de Dados Local."); }
+      } catch (err) { 
+        setAlertMsg("Ops! Falha ao consultar produto no servidor."); 
+      }
     }
+  };
+
+  // Funções para remoção/cancelamento de itens do carrinho
+  const handleSolicitarRemoverItem = (item: CartItem) => {
+    if (item.quantity <= 1) {
+      setCart(prev => prev.filter(it => it.id !== item.id && it.ean !== item.ean));
+      setAlertMsg(`Item "${item.name}" removido do carrinho.`);
+    } else {
+      setItemParaRemover(item);
+      setQtdRemoverInput(1);
+    }
+  };
+
+  const confirmarRemocaoItem = (qtdRemover: number) => {
+    if (!itemParaRemover) return;
+    const qtd = Number(qtdRemover);
+    if (isNaN(qtd) || qtd <= 0) {
+      alert("Informe uma quantidade válida para remover.");
+      return;
+    }
+    if (qtd >= itemParaRemover.quantity) {
+      setCart(prev => prev.filter(it => it.id !== itemParaRemover.id && it.ean !== itemParaRemover.ean));
+      setAlertMsg(`Todas as ${itemParaRemover.quantity} un de "${itemParaRemover.name}" foram removidas.`);
+    } else {
+      setCart(prev => prev.map(it => {
+        if (it.id === itemParaRemover.id || it.ean === itemParaRemover.ean) {
+          return { ...it, quantity: it.quantity - qtd };
+        }
+        return it;
+      }));
+      setAlertMsg(`${qtd} un de "${itemParaRemover.name}" removidas.`);
+    }
+    setItemParaRemover(null);
   };
 
   const parsePaymentValue = () => {
@@ -488,15 +705,13 @@ export default function App() {
   };
 
   const handleAbrirPainelAdm = () => {
-    if (adminToken && adminName) {
-      setShowAdminPanel(true);
-      carregarVendasAdmin(adminToken);
-    } else {
-      setAdminAuthMatricula("");
-      setAdminAuthSenha("");
-      setAdminAuthError("");
-      setShowAdminAuthModal(true);
-    }
+    // SEMPRE exige autenticação de Administrador para abrir o painel
+    setAdminToken("");
+    setAdminName("");
+    setAdminAuthMatricula("");
+    setAdminAuthSenha("");
+    setAdminAuthError("");
+    setShowAdminAuthModal(true);
   };
 
   const handleAdminAuthSubmit = async (e: React.FormEvent) => {
@@ -537,21 +752,33 @@ export default function App() {
   };
 
   const handleReimprimirSegundaVia = (venda: any) => {
-    const itensReimprimir: CartItem[] = (venda.itens || []).map((it: any) => ({
-      id: it.ean || Math.random().toString(),
-      ean: it.ean,
-      name: it.nome,
-      quantity: Number(it.quantidade),
-      unitPrice: Number(it.preco)
+    let itensVenda = Array.isArray(venda.itens) && venda.itens.length > 0 ? venda.itens : [];
+    
+    // Fallback: se a venda não tem itens detalhados (ex: vendas antigas sem log detalhado), gera item representativo
+    if (itensVenda.length === 0) {
+      itensVenda = [{
+        ean: '0000000000000',
+        nome: 'VENDA DE MERCADORIA / CUPOM FISCAL',
+        quantidade: 1,
+        preco: Number(venda.total || 0)
+      }];
+    }
+
+    const itensReimprimir: CartItem[] = itensVenda.map((it: any, index: number) => ({
+      id: String(it.ean || it.id || index),
+      ean: String(it.ean || it.produto_ean || '0000000000000'),
+      name: String(it.nome || it.produto_nome || it.name || it.descricao || 'Item diverso'),
+      quantity: Number(it.quantidade ?? it.quantity ?? 1) || 1,
+      unitPrice: Number(it.preco ?? it.preco_unitario ?? it.unitPrice ?? 0)
     }));
 
     const receiptData: ReceiptData = {
       itens: itensReimprimir,
-      total: Number(venda.total),
-      date: new Date(venda.criado_em).toLocaleString('pt-BR'),
+      total: Number(venda.total || 0),
+      date: venda.criado_em ? new Date(venda.criado_em).toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR'),
       cpfCnpj: venda.cpf_cnpj_cliente || '',
-      payments: [{ id: '1', method: venda.metodo_pagamento || 'DINHEIRO', value: Number(venda.total) }],
-      chave_acesso: venda.chave_nfe,
+      payments: [{ id: '1', method: venda.metodo_pagamento || 'DINHEIRO', value: Number(venda.total || 0) }],
+      chave_acesso: venda.chave_nfe || '',
       vendaId: venda.id,
       numNfce: venda.num_nfe || venda.id,
       isSegundaVia: true,
@@ -562,7 +789,7 @@ export default function App() {
     setAdminMenuAbertoId(null);
     setTimeout(() => {
       executePrint();
-      setTimeout(() => setLastReceipt(null), 1000);
+      setTimeout(() => setLastReceipt(null), 4000);
       setAlertMsg(`2ª Via da Venda #${String(venda.id).padStart(6, '0')} enviada para a impressora!`);
     }, 150);
   };
@@ -814,6 +1041,14 @@ export default function App() {
                 <div className="cart-item-desc">{item.name}</div>
                 <div className="cart-item-qty">{item.quantity} x R$ {item.unitPrice.toFixed(2).replace('.', ',')}</div>
                 <div className="cart-item-price">R$ {(item.quantity * item.unitPrice).toFixed(2).replace('.', ',')}</div>
+                <button
+                  type="button"
+                  className="btn-cart-remove"
+                  title="Cancelar / Remover este item"
+                  onClick={() => handleSolicitarRemoverItem(item)}
+                >
+                  ✕
+                </button>
               </div>
             ))
           )}
@@ -829,8 +1064,47 @@ export default function App() {
         </div>
 
         <div className="input-panel">
-          <label style={{ display: "block", marginBottom: "0.5rem", color: "var(--text-secondary)" }}>Código de Barras / EAN</label>
-          <input ref={inputRef} type="text" className="barcode-input" placeholder="Bipar o produto..." value={barcode} onChange={(e) => setBarcode(e.target.value)} onKeyDown={handleBarcodeSubmit} />
+          <label style={{ display: "block", marginBottom: "0.5rem", color: "var(--text-secondary)" }}>
+            Código de Barras ou Descrição do Produto
+          </label>
+          <div style={{ position: 'relative' }}>
+            <input
+              ref={inputRef}
+              type="text"
+              className="barcode-input"
+              placeholder="Bipar EAN ou digitar nome..."
+              value={barcode}
+              onChange={handleBarcodeChange}
+              onKeyDown={handleBarcodeKeyDown}
+              onFocus={() => { if (produtosSugeridos.length > 0) setShowSugestoes(true); }}
+            />
+
+            {showSugestoes && produtosSugeridos.length > 0 && (
+              <div className="product-suggestions-box">
+                {produtosSugeridos.map((prod, idx) => (
+                  <div
+                    key={prod.id || prod.ean || idx}
+                    className={`product-suggestion-item ${idx === sugestoesIndex ? 'active' : ''}`}
+                    onClick={() => adicionarProdutoAoCarrinho(prod)}
+                  >
+                    <div className="product-suggestion-info">
+                      <span className="product-suggestion-name">{prod.nome}</span>
+                      <div className="product-suggestion-meta">
+                        <span>EAN: {prod.ean}</span>
+                        <span>•</span>
+                        <span style={{ color: Number(prod.estoque_atual) > 0 ? 'var(--accent)' : 'var(--danger)' }}>
+                          Estoque: {prod.estoque_atual ?? '—'} un
+                        </span>
+                      </div>
+                    </div>
+                    <div className="product-suggestion-price">
+                      R$ {Number(prod.preco_venda || 0).toFixed(2).replace('.', ',')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="shortcuts-panel" style={{ marginTop: '2rem' }}>
             <button className="shortcut-btn" onClick={cancelarVenda}>Cancelar Venda <span>[ F4 ]</span></button>
@@ -900,7 +1174,7 @@ export default function App() {
                     <button className="shortcut-btn" style={{ fontSize: '0.85rem', padding: '10px' }} onClick={() => resta > 0 && addPayment('Dinheiro')}>Dinheiro (F4)</button>
                     <button className="shortcut-btn" style={{ fontSize: '0.85rem', padding: '10px' }}>Voucher (F5)</button>
                     <button className="shortcut-btn" style={{ fontSize: '0.85rem', padding: '10px' }} onClick={() => resta > 0 && setShowPosAuth(true)}>POS (F6)</button>
-                    <button className="shortcut-btn" style={{ fontSize: '0.85rem', padding: '10px', border: '1px solid var(--accent)', color: 'var(--accent)' }} onClick={() => resta > 0 && setShowPix(true)}>PIX (F8)</button>
+                    <button className="shortcut-btn" style={{ fontSize: '0.85rem', padding: '10px' }} onClick={() => resta > 0 && setShowPix(true)}>PIX (F8)</button>
                     <button className="shortcut-btn" style={{ fontSize: '0.85rem', padding: '10px' }}>Convênio (F7)</button>
                   </div>
                 </div>
@@ -1023,7 +1297,7 @@ export default function App() {
           <div className="pix-modal" style={{ textAlign: 'left', width: '450px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <h3 style={{ margin: 0, color: 'var(--text)', fontSize: '1.2rem' }}>Entrega do Documento</h3>
-              <button onClick={() => { setLastReceipt(printPrompt.receiptData); setTimeout(() => setLastReceipt(null), 100); setPrintPrompt(null); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}>✖</button>
+              <button onClick={() => { setLastReceipt(null); setPrintPrompt(null); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}>✖</button>
             </div>
             <p style={{ color: 'var(--text-muted)', marginBottom: '15px' }}>Como entregar o documento fiscal ao cliente?</p>
             
@@ -1037,12 +1311,118 @@ export default function App() {
             </div>
             
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button onClick={() => { setLastReceipt(printPrompt.receiptData); setTimeout(() => setLastReceipt(null), 100); setPrintPrompt(null); }} className="btn-cancel">Cancelar</button>
+              <button onClick={() => { setLastReceipt(null); setPrintPrompt(null); }} className="btn-cancel">Cancelar</button>
               <button onClick={() => { 
                 setLastReceipt(printPrompt.receiptData); 
                 setPrintPrompt(null);
-                setTimeout(() => { executePrint(); setTimeout(() => setLastReceipt(null), 1000); }, 100);
+                setTimeout(() => { executePrint(); setTimeout(() => setLastReceipt(null), 4000); }, 100);
               }} className="btn-success">Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REMOVER / CANCELAR ITEM DO CARRINHO */}
+      {itemParaRemover && (
+        <div className="pix-modal-overlay" style={{ zIndex: 1200 }}>
+          <div className="modal-remove-item">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>✕</span> Cancelar Item do Carrinho
+              </h3>
+              <button
+                type="button"
+                onClick={() => setItemParaRemover(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ background: 'var(--bg-surface-2)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+              <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text)', marginBottom: '4px' }}>
+                {itemParaRemover.name}
+              </div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                EAN: {itemParaRemover.ean}
+              </div>
+              <div style={{ marginTop: '10px', fontSize: '0.9rem', color: 'var(--text-soft)' }}>
+                Quantidade atual: <strong style={{ color: 'var(--text)' }}>{itemParaRemover.quantity} un</strong> &nbsp;|&nbsp; 
+                Total: <strong style={{ color: 'var(--accent)' }}>R$ {(itemParaRemover.quantity * itemParaRemover.unitPrice).toFixed(2).replace('.', ',')}</strong>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                type="button"
+                className="shortcut-btn"
+                style={{ padding: '12px 14px', justifyContent: 'center', fontWeight: 700 }}
+                onClick={() => confirmarRemocaoItem(1)}
+              >
+                Remover 1 unidade (Ficar com {itemParaRemover.quantity - 1} un)
+              </button>
+
+              <button
+                type="button"
+                className="shortcut-btn"
+                style={{ padding: '12px 14px', justifyContent: 'center', fontWeight: 700, color: 'var(--danger)' }}
+                onClick={() => confirmarRemocaoItem(itemParaRemover.quantity)}
+              >
+                Remover TODAS as {itemParaRemover.quantity} unidades deste produto
+              </button>
+
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', marginTop: '4px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                  Ou escolha a quantidade exata a remover:
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="number"
+                    min={1}
+                    max={itemParaRemover.quantity}
+                    value={qtdRemoverInput}
+                    onChange={e => setQtdRemoverInput(Math.max(1, Math.min(itemParaRemover.quantity, parseInt(e.target.value) || 1)))}
+                    style={{
+                      flex: 1,
+                      padding: '10px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-strong)',
+                      background: 'var(--bg-input)',
+                      color: 'var(--text)',
+                      fontSize: '1rem',
+                      textAlign: 'center',
+                      fontWeight: 700,
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    style={{
+                      padding: '10px 16px',
+                      borderRadius: '8px',
+                      background: 'var(--danger)',
+                      color: 'white',
+                      fontWeight: 700,
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => confirmarRemocaoItem(qtdRemoverInput)}
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
+              <button
+                type="button"
+                className="btn-cancel"
+                onClick={() => setItemParaRemover(null)}
+                style={{ padding: '8px 16px' }}
+              >
+                Voltar (Esc)
+              </button>
             </div>
           </div>
         </div>
@@ -1202,7 +1582,7 @@ export default function App() {
 
       {/* PAINEL ADMINISTRATIVO (CONSULTA & GESTÃO DE VENDAS) */}
       {showAdminPanel && (
-        <div className="admin-modal-overlay" onClick={() => setShowAdminPanel(false)}>
+        <div className="admin-modal-overlay" onClick={handleFecharPainelAdm}>
           <div className="admin-panel-box" onClick={e => e.stopPropagation()}>
             <div className="admin-panel-header">
               <h2>
@@ -1222,7 +1602,7 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowAdminPanel(false)}
+                  onClick={handleFecharPainelAdm}
                   className="admin-filter-btn"
                   style={{ padding: '8px 12px' }}
                 >
@@ -1640,7 +2020,18 @@ export default function App() {
             <p style={{ margin: 0 }}>Areal Aguas Claras - Brasilia - DF</p>
             <p style={{ margin: 0 }}>CNPJ: 00.000.000/0001-00</p>
             <p style={{ margin: 0 }}>Telefone: (61) 9999-9999</p>
-            <p style={{ margin: 0, marginTop: '5px' }}>Data: {lastReceipt.date.split(' ')[0]} - {lastReceipt.date.split(' ')[1]}</p>
+            <p style={{ margin: 0, marginTop: '5px' }}>
+              Data: {(() => {
+                try {
+                  const dStr = String(lastReceipt.date || '');
+                  if (dStr.includes(' ')) return dStr;
+                  const d = new Date(dStr);
+                  return isNaN(d.getTime()) ? dStr : d.toLocaleString('pt-BR');
+                } catch {
+                  return new Date().toLocaleString('pt-BR');
+                }
+              })()}
+            </p>
             <p style={{ margin: 0, fontWeight: 'bold' }}>
               LOJA: 0101 &nbsp; PDV: 001 &nbsp; VENDA Nº: #{String(lastReceipt.vendaId || '000001').padStart(6, '0')}
             </p>
@@ -1665,29 +2056,38 @@ export default function App() {
           </div>
           
           <div>
-            {lastReceipt.itens.map((item, idx) => (
-              <div key={idx} style={{ marginBottom: '5px' }}>
-                <div>{(idx+1).toString().padStart(3, '0')} {item.ean} {item.name.substring(0, 20)}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '25px' }}>
-                  <span>{item.quantity.toFixed(3).replace('.', ',')} un x {item.unitPrice.toFixed(2).replace('.', ',')}</span>
-                  <span>{(item.quantity * item.unitPrice).toFixed(2).replace('.', ',')}</span>
+            {(lastReceipt.itens && lastReceipt.itens.length > 0 ? lastReceipt.itens : [
+              { id: '1', ean: '0000000000000', name: 'VENDA DE MERCADORIA / CUPOM FISCAL', quantity: 1, unitPrice: Number(lastReceipt.total || 0) }
+            ]).map((item: any, idx: number) => {
+              const itemName = String(item?.name || item?.nome || item?.produto_nome || item?.descricao || 'MERCADORIA');
+              const itemEan = String(item?.ean || item?.produto_ean || '0000000000000');
+              const itemQty = Number(item?.quantity ?? item?.quantidade ?? 1) || 1;
+              const itemPrice = Number(item?.unitPrice ?? item?.preco ?? item?.preco_unitario ?? 0);
+              const itemSubtotal = itemQty * itemPrice;
+              return (
+                <div key={idx} style={{ marginBottom: '5px' }}>
+                  <div>{(idx+1).toString().padStart(3, '0')} {itemEan} {itemName.substring(0, 22)}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '25px' }}>
+                    <span>{itemQty.toFixed(3).replace('.', ',')} un x {itemPrice.toFixed(2).replace('.', ',')}</span>
+                    <span>{itemSubtotal.toFixed(2).replace('.', ',')}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div style={{ borderTop: '1px dashed black', paddingTop: '5px', marginTop: '5px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>QTD. TOTAL DE ITENS</span>
-              <span>{lastReceipt.itens.reduce((sum, item) => sum + item.quantity, 0)}</span>
+              <span>{(lastReceipt.itens || []).reduce((sum: number, item: any) => sum + (Number(item?.quantity ?? item?.quantidade ?? 1) || 1), 0) || 1}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
               <span>VALOR TOTAL R$</span>
-              <span>{lastReceipt.total.toFixed(2).replace('.', ',')}</span>
+              <span>{Number(lastReceipt.total || 0).toFixed(2).replace('.', ',')}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', marginTop: '5px' }}>
               <span>VALOR A PAGAR R$</span>
-              <span>{lastReceipt.total.toFixed(2).replace('.', ',')}</span>
+              <span>{Number(lastReceipt.total || 0).toFixed(2).replace('.', ',')}</span>
             </div>
           </div>
 
@@ -1696,16 +2096,18 @@ export default function App() {
               <span>FORMA DE PAGAMENTO</span>
               <span>VALOR PAGO R$</span>
             </div>
-            {lastReceipt.payments.map((p, idx) => (
+            {(lastReceipt.payments && lastReceipt.payments.length > 0 ? lastReceipt.payments : [
+              { id: '1', method: 'DINHEIRO', value: Number(lastReceipt.total || 0) }
+            ]).map((p: any, idx: number) => (
                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                 <span>{p.method} {p.authCode ? `(${p.authCode})` : ''}</span>
-                 <span>{p.value.toFixed(2).replace('.', ',')}</span>
+                 <span>{p?.method || 'DINHEIRO'} {p?.authCode ? `(${p.authCode})` : ''}</span>
+                 <span>{Number(p?.value || 0).toFixed(2).replace('.', ',')}</span>
                </div>
             ))}
             
             {(() => {
-              const totalRecebidoFormat = lastReceipt.payments.reduce((sum, p) => sum + p.value, 0);
-              const trocoFormat = Math.max(0, totalRecebidoFormat - lastReceipt.total);
+              const totalRecebidoFormat = (lastReceipt.payments || []).reduce((sum: number, p: any) => sum + Number(p?.value || 0), 0) || Number(lastReceipt.total || 0);
+              const trocoFormat = Math.max(0, totalRecebidoFormat - Number(lastReceipt.total || 0));
               return (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginTop: '5px' }}>
                   <span>TROCO R$</span>
@@ -1734,7 +2136,7 @@ export default function App() {
               <div style={{ fontSize: '9px', textAlign: 'left' }}>
                 <p style={{ fontWeight: 'bold' }}>{lastReceipt.cpfCnpj ? `CONSUMIDOR: ${lastReceipt.cpfCnpj}` : 'CONSUMIDOR NAO IDENTIFICADO'}</p>
                 <p>NFC-e n. {lastReceipt.numNfce || lastReceipt.vendaId || '276272'} Serie 9</p>
-                <p>Emissao: {lastReceipt.date}</p>
+                <p>Emissao: {String(lastReceipt.date || '')}</p>
                 <p>Protocolo de Autorizacao: 353240</p>
               </div>
             </div>
@@ -1742,7 +2144,7 @@ export default function App() {
 
           <div style={{ fontSize: '10px', marginBottom: '10px' }}>
             <p style={{ margin: 0, fontWeight: 'bold' }}>Procon-DF: 151 - End: SCS Q.08 Ed. Venancio 2000 B.B-60</p>
-            <p style={{ margin: 0 }}>Tributos Totais Incidentes (Lei Federal 12.741/2012): R$ {(lastReceipt.total * 0.18).toFixed(2).replace('.', ',')} Federal e Estadual</p>
+            <p style={{ margin: 0 }}>Tributos Totais Incidentes (Lei Federal 12.741/2012): R$ {(Number(lastReceipt.total || 0) * 0.18).toFixed(2).replace('.', ',')} Federal e Estadual</p>
             <p style={{ margin: 0 }}>Fonte: IBPT</p>
           </div>
           

@@ -550,7 +550,38 @@ fastify.post('/auth', {
   }
 })
 
-// Rota 1: Buscar um produto específico pelo Código de Barras (EAN)
+// Rota 1.0: Catálogo completo de produtos para o PDV carregar em memória
+fastify.get('/produtos', async (request, reply) => {
+  try {
+    const { rows } = await pool.query('SELECT id, ean, nome, preco_venda, preco_custo, estoque_atual FROM produtos ORDER BY nome ASC')
+    return rows
+  } catch (err) {
+    fastify.log.error(err)
+    return reply.status(500).send({ error: 'Erro ao buscar catálogo de produtos' })
+  }
+})
+
+// Rota 1.1: Buscar produtos por Nome ou Código de Barras (EAN)
+fastify.get('/produtos/busca', async (request, reply) => {
+  const { q } = request.query || {}
+  try {
+    const termo = (q || '').trim()
+    if (!termo) {
+      const { rows } = await pool.query('SELECT id, ean, nome, preco_venda, preco_custo, estoque_atual FROM produtos ORDER BY nome ASC LIMIT 50')
+      return rows
+    }
+    const { rows } = await pool.query(
+      'SELECT id, ean, nome, preco_venda, preco_custo, estoque_atual FROM produtos WHERE nome ILIKE $1 OR ean ILIKE $1 ORDER BY nome ASC LIMIT 25',
+      [`%${termo}%`]
+    )
+    return rows
+  } catch (err) {
+    fastify.log.error(err)
+    return reply.status(500).send({ error: 'Erro ao buscar produtos' })
+  }
+})
+
+// Rota 1.2: Buscar um produto específico pelo Código de Barras (EAN)
 fastify.get('/produtos/:ean', async (request, reply) => {
   const { ean } = request.params
   try {

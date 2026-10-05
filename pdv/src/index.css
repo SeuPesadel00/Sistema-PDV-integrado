@@ -723,3 +723,110 @@ body, .pos-left, .totals-panel, .input-panel, .cart-item, .shortcut-btn, .pix-mo
 .admin-actions-menu button.warning { color: var(--warning); }
 .admin-actions-menu button.warning:hover:not(:disabled) { background: var(--warning-soft); }
 .admin-actions-menu button:disabled { color: var(--text-muted); cursor: not-allowed; opacity: 0.5; }
+
+/* BOTÃO DE CANCELAR/REMOVER ITEM DO CARRINHO */
+.btn-cart-remove {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: bold;
+  transition: all 0.2s ease;
+  margin-left: 10px;
+  flex-shrink: 0;
+}
+
+.btn-cart-remove:hover {
+  background: var(--danger-soft);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: var(--danger);
+  transform: scale(1.1);
+}
+
+/* CAIXA DE SUGESTÕES DE PRODUTO (BUSCA POR NOME / EAN) */
+.product-suggestions-box {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.45);
+  max-height: 290px;
+  overflow-y: auto;
+  z-index: 1000;
+  backdrop-filter: blur(12px);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.product-suggestion-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.product-suggestion-item:hover,
+.product-suggestion-item.active {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.product-suggestion-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.product-suggestion-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.product-suggestion-meta {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.product-suggestion-price {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--accent);
+  margin-left: 12px;
+  white-space: nowrap;
+}
+
+/* MODAL DE REMOÇÃO / CANCELAMENTO DE ITEM (MULTIPLE QTY) */
+.modal-remove-item {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  width: 450px;
+  max-width: 90vw;
+  padding: 24px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
