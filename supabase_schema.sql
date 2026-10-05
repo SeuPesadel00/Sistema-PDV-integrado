@@ -71,6 +71,9 @@ CREATE TABLE IF NOT EXISTS vendas (
     chave_nfe VARCHAR(44),
     protocolo_nfe VARCHAR(50),
     xml_nfe TEXT,
+    status VARCHAR(20) DEFAULT 'CONCLUIDA', -- CONCLUIDA | CANCELADA | ESTORNADA
+    motivo_cancelamento TEXT,
+    estorno_info JSONB,
     num_nfe INTEGER,
     serie_nfe INTEGER DEFAULT 1,
     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP

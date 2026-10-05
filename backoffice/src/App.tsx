@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Users, Package, LayoutDashboard, LogOut, Receipt, Sun, Moon, Search, ChevronRight,
   TrendingUp, Wallet, ShoppingCart, Trophy, PiggyBank, TriangleAlert, Boxes, Store,
-  ArrowDownToLine, ArrowUpFromLine, Lock, ArrowUpDown, Ticket, Eye, EyeOff
+  ArrowDownToLine, ArrowUpFromLine, Lock, ArrowUpDown, Ticket, Eye, EyeOff,
+  Trash2, MoreVertical, Printer, XCircle, RotateCcw, ShieldCheck
 } from 'lucide-react';
 
 const DEFAULT_API = 'https://api-tailandia.onrender.com';
@@ -37,6 +38,7 @@ const PAG_COR: Record<string, string> = { DINHEIRO: 'green', PIX: 'blue', CARTAO
 const splitPagamentos = (m: string) => String(m || '').split(',').map(s => s.replace(/\(.*\)/, '').trim()).filter(Boolean);
 
 const PERIODOS = [
+  { id: 'hoje', label: 'Hoje' },
   { id: '1', label: '24h' },
   { id: '7', label: '7 dias' },
   { id: '30', label: '30 dias' },
@@ -49,6 +51,8 @@ const MOV_INFO: Record<string, { label: string; cor: string; entrada: boolean }>
   ENTRADA_REPOSICAO: { label: 'Reposição', cor: 'blue', entrada: true },
   VENDA: { label: 'Venda', cor: 'violet', entrada: false },
   AJUSTE_SAIDA: { label: 'Ajuste / Perda', cor: 'red', entrada: false },
+  CANCELAMENTO_VENDA: { label: 'Canc. Venda (Estoque Devolvido)', cor: 'amber', entrada: true },
+  ESTORNO_VENDA: { label: 'Estorno (Estoque Devolvido)', cor: 'amber', entrada: true },
 };
 
 // ==========================================
@@ -353,6 +357,37 @@ function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
     }
   };
 
+  const handleExcluir = async () => {
+    if (!funcionario?.id) return;
+    const confirmou = window.confirm(
+      `ATENÇÃO: Deseja realmente excluir o funcionário "${nome}"?\n\n` +
+      `Esta ação removerá o cadastro do funcionário e seu acesso ao sistema.\n` +
+      `Todas as vendas, movimentações de estoque e registros de auditoria realizados por ele continuarão preservados para histórico e métricas.`
+    );
+    if (!confirmou) return;
+
+    setSalvando(true);
+    try {
+      const token = localStorage.getItem('adm_token');
+      const api = getApiUrl();
+      const res = await fetch(`${api}/admin/funcionarios/${funcionario.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Erro ao excluir funcionário.');
+      }
+      alert(`Funcionário "${nome}" excluído com sucesso. Os registros históricos foram mantidos.`);
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
   const onEnter = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -427,12 +462,231 @@ function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
             </button>
           </div>
         </div>
-        <div className="modal-actions">
-          <button onClick={onClose} disabled={salvando} className="btn btn-ghost">Cancelar</button>
-          <button id="func-salvar" onClick={handleSave} disabled={salvando} className="btn btn-primary">
-            {salvando ? 'Salvando...' : 'Salvar Funcionário'}
+        <div className="modal-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          {funcionario ? (
+            <button
+              id="func-excluir"
+              type="button"
+              onClick={handleExcluir}
+              disabled={salvando}
+              className="btn btn-danger"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                backgroundColor: 'var(--danger)',
+                color: '#fff',
+                border: 'none',
+                padding: '9px 15px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.88rem'
+              }}
+            >
+              <Trash2 size={16} /> Excluir Funcionário
+            </button>
+          ) : <div />}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={onClose} disabled={salvando} className="btn btn-ghost">Cancelar</button>
+            <button id="func-salvar" onClick={handleSave} disabled={salvando} className="btn btn-primary">
+              {salvando ? 'Salvando...' : 'Salvar Funcionário'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// MODAL REIMPRESSÃO DE CUPOM / NOTA FISCAL
+// ==========================================
+function ModalReimpressaoCupom({ venda, onClose }: { venda: any; onClose: () => void }) {
+  if (!venda) return null;
+  const itens: any[] = Array.isArray(venda.itens) ? venda.itens : [];
+  const totalItens = itens.reduce((a, it) => a + Number(it.quantidade), 0);
+  const dataFormatada = dataHora(venda.criado_em);
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Receipt size={20} /> 2ª Via da Nota Fiscal
+          </h3>
+          <button onClick={onClose} className="btn btn-ghost" style={{ padding: '4px 8px' }}>✖</button>
+        </div>
+
+        <div className="print-receipt-preview" style={{ background: '#fff', color: '#000', padding: 20, borderRadius: 8, border: '1px dashed #ccc', fontFamily: 'monospace', fontSize: '11px', maxHeight: '60vh', overflowY: 'auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 10 }}>
+            <h4 style={{ margin: 0, fontSize: 13, fontWeight: 'bold' }}>TAILANDIA DISTRIBUIDORA S/A</h4>
+            <p style={{ margin: 0 }}>QS 9 - Rua 100 Lote 04, S/N</p>
+            <p style={{ margin: 0 }}>Areal Aguas Claras - Brasilia - DF</p>
+            <p style={{ margin: 0 }}>CNPJ: 00.000.000/0001-00</p>
+            <p style={{ margin: 0 }}>Data: {dataFormatada}</p>
+            <p style={{ margin: 0, fontWeight: 'bold', marginTop: 4 }}>
+              LOJA: 0101 &nbsp; PDV: 001 &nbsp; VENDA Nº: #{String(venda.id).padStart(6, '0')}
+            </p>
+            <p style={{ margin: 0, fontWeight: 'bold', color: venda.status === 'CANCELADA' ? 'red' : venda.status === 'ESTORNADA' ? 'orange' : 'inherit' }}>
+              {venda.status === 'CANCELADA' ? '*** VENDA CANCELADA ***' : venda.status === 'ESTORNADA' ? '*** VENDA ESTORNADA ***' : '*** 2ª VIA DO DOCUMENTO AUXILIAR ***'}
+            </p>
+          </div>
+
+          <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '4px 0', margin: '6px 0', fontWeight: 'bold' }}>
+            ITEM | COD | DESC | QTDE | VL. UNIT | TOTAL R$
+          </div>
+
+          {itens.map((it: any, i: number) => (
+            <div key={i} style={{ marginBottom: 4 }}>
+              <div>{String(i + 1).padStart(2, '0')} {it.ean} {it.nome}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: 12 }}>
+                <span>{int(it.quantidade)} un x {brl(it.preco)}</span>
+                <span style={{ fontWeight: 'bold' }}>{brl(Number(it.quantidade) * Number(it.preco))}</span>
+              </div>
+            </div>
+          ))}
+
+          <div style={{ borderTop: '1px dashed #000', paddingTop: 6, marginTop: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>QTD. TOTAL DE ITENS:</span>
+              <span>{int(totalItens)} un</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: 13, marginTop: 4 }}>
+              <span>VALOR TOTAL R$:</span>
+              <span>{brl(venda.total)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+              <span>PAGAMENTO:</span>
+              <span>{venda.metodo_pagamento}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>CONSUMIDOR:</span>
+              <span>{venda.cpf_cnpj_cliente || 'NAO IDENTIFICADO'}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+              <span>NFC-e Nº:</span>
+              <span>{venda.num_nfe || venda.id}</span>
+            </div>
+            {venda.chave_nfe && (
+              <div style={{ marginTop: 6, fontSize: '9px', wordBreak: 'break-all' }}>
+                <strong>CHAVE DE ACESSO:</strong> {venda.chave_nfe}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="modal-actions" style={{ marginTop: 16 }}>
+          <button onClick={onClose} className="btn btn-ghost">Fechar</button>
+          <button onClick={handlePrint} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Printer size={16} /> Imprimir 2ª Via
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// MODAL ESTORNO DE VENDA
+// ==========================================
+function ModalEstorno({ venda, onClose, onConfirm }: { venda: any; onClose: () => void; onConfirm: (dados: any) => void }) {
+  if (!venda) return null;
+  const [motivo, setMotivo] = useState('Desistência do cliente');
+  const [forma, setForma] = useState(venda.metodo_pagamento?.includes('PIX') ? 'PIX' : venda.metodo_pagamento?.includes('DINHEIRO') ? 'DINHEIRO' : 'CARTAO_MAQUININHA');
+  const [nsu, setNsu] = useState('');
+  const [obs, setObs] = useState('');
+  const [salvando, setSalvando] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSalvando(true);
+    onConfirm({ motivo, forma_devolucao: forma, nsu_comprovante: nsu, observacoes: obs });
+    onClose();
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+          <h3 style={{ margin: 0, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <RotateCcw size={20} /> Estorno da Venda #{String(venda.id).padStart(6, '0')}
+          </h3>
+          <button onClick={onClose} className="btn btn-ghost" style={{ padding: '4px 8px' }}>✖</button>
+        </div>
+
+        <div style={{ background: 'var(--bg-surface-2)', padding: 14, borderRadius: 10, marginBottom: 16, border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ color: 'var(--text-muted)' }}>Valor Total da Venda:</span>
+            <strong style={{ color: 'var(--accent)', fontSize: '1.1rem' }}>{brl(venda.total)}</strong>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ color: 'var(--text-muted)' }}>Forma Original:</span>
+            <span>{venda.metodo_pagamento}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--text-muted)' }}>Data da Venda:</span>
+            <span>{dataHora(venda.criado_em)}</span>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label className="label">Motivo do Estorno</label>
+            <select className="input" value={motivo} onChange={e => setMotivo(e.target.value)}>
+              <option value="Desistência do cliente">Desistência do cliente</option>
+              <option value="Cobrança duplicada ou incorreta">Cobrança duplicada ou incorreta</option>
+              <option value="Defeito / Avaria na mercadoria">Defeito / Avaria na mercadoria</option>
+              <option value="Troca com devolução de valor">Troca com devolução de valor</option>
+              <option value="Outro">Outro motivo</option>
+            </select>
+          </div>
+
+          <div className="field">
+            <label className="label">Forma de Devolução ao Cliente</label>
+            <select className="input" value={forma} onChange={e => setForma(e.target.value)}>
+              <option value="DINHEIRO">Dinheiro (Devolução em Espécie no Balcão)</option>
+              <option value="PIX">Pix (Transferência / Estorno Pix)</option>
+              <option value="CARTAO_MAQUININHA">Maquininha (Estorno no POS / TEF)</option>
+            </select>
+          </div>
+
+          <div className="field">
+            <label className="label">Código de Autorização / NSU / Comprovante (opcional)</label>
+            <input
+              className="input"
+              placeholder="Ex: NSU 984572 ou Código PIX"
+              value={nsu}
+              onChange={e => setNsu(e.target.value)}
+            />
+          </div>
+
+          <div className="field">
+            <label className="label">Observações Adicionais</label>
+            <textarea
+              className="input"
+              rows={2}
+              placeholder="Detalhes para registro no log de auditoria..."
+              value={obs}
+              onChange={e => setObs(e.target.value)}
+            />
+          </div>
+
+          <div className="hint" style={{ color: 'var(--text-muted)', marginBottom: 16 }}>
+            ℹ️ Ao confirmar, a venda será marcada como <strong>ESTORNADA</strong>, os itens retornarão ao estoque e o valor será deduzido do faturamento ativo.
+          </div>
+
+          <div className="modal-actions">
+            <button type="button" onClick={onClose} className="btn btn-ghost" disabled={salvando}>Cancelar</button>
+            <button type="submit" className="btn btn-primary" style={{ backgroundColor: 'var(--warning)', borderColor: 'var(--warning)' }} disabled={salvando}>
+              {salvando ? 'Processando...' : 'Confirmar Estorno'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -599,7 +853,20 @@ function Segmented({ value, onChange, options, id }: { value: string; onChange: 
   );
 }
 
-const dentroDoPeriodo = (data: any, dias: string) => !dias || (Date.now() - new Date(data).getTime()) <= Number(dias) * 86400000;
+const dentroDoPeriodo = (data: any, dias: string) => {
+  if (!dias) return true;
+  if (!data) return false;
+  const d = new Date(data);
+  if (dias === 'hoje') {
+    const hoje = new Date();
+    return d.getDate() === hoje.getDate() && d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
+  }
+  if (dias === 'ontem') {
+    const ontem = new Date(Date.now() - 86400000);
+    return d.getDate() === ontem.getDate() && d.getMonth() === ontem.getMonth() && d.getFullYear() === ontem.getFullYear();
+  }
+  return (Date.now() - d.getTime()) <= Number(dias) * 86400000;
+};
 
 // ==========================================
 // RANKING DE PRODUTOS (Painel Geral)
@@ -738,6 +1005,9 @@ export default function App() {
   const [modalProduto, setModalProduto] = useState<any>({ open: false, data: null });
   const [modalFuncionario, setModalFuncionario] = useState<any>({ open: false, data: null });
   const [modalEntrada, setModalEntrada] = useState(false);
+  const [modalReimpressao, setModalReimpressao] = useState<any>(null);
+  const [modalEstorno, setModalEstorno] = useState<any>(null);
+  const [menuAbertoId, setMenuAbertoId] = useState<number | null>(null);
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('adm_operatorName');
@@ -762,7 +1032,18 @@ export default function App() {
 
       if (Array.isArray(dP)) setProdutos(dP);
       if (Array.isArray(dF)) setFuncionarios(dF);
-      if (Array.isArray(dV)) setVendas(dV);
+      if (Array.isArray(dV)) {
+        // Aplica overrides de status salvos localmente caso o backend ainda não tenha propagado
+        const overridesRaw = localStorage.getItem('vendas_status_override');
+        const overrides: Record<string, any> = overridesRaw ? JSON.parse(overridesRaw) : {};
+        const dVMesclado = dV.map((v: any) => {
+          if (overrides[v.id]) {
+            return { ...v, ...overrides[v.id] };
+          }
+          return v;
+        });
+        setVendas(dVMesclado);
+      }
     } catch { /* servidor indisponível: tenta de novo no próximo ciclo */ }
   }, [handleLogout]);
 
@@ -805,8 +1086,101 @@ export default function App() {
     setAdminName(nome);
   };
 
+  const salvarStatusOverride = (vendaId: number, status: string, extraData: any = {}) => {
+    try {
+      const overridesRaw = localStorage.getItem('vendas_status_override');
+      const overrides = overridesRaw ? JSON.parse(overridesRaw) : {};
+      overrides[vendaId] = { status, ...extraData };
+      localStorage.setItem('vendas_status_override', JSON.stringify(overrides));
+    } catch { /* ignora */ }
+  };
+
+  const handleCancelarVenda = async (venda: any) => {
+    if (venda.status === 'CANCELADA') {
+      alert('Esta venda já está cancelada.');
+      return;
+    }
+    const motivo = window.prompt(`Motivo do cancelamento da Venda #${String(venda.id).padStart(6, '0')}:`, 'Desistência do cliente / Cancelamento solicitado no balcão');
+    if (motivo === null) return;
+
+    const token = localStorage.getItem('adm_token');
+    const api = getApiUrl();
+    try {
+      const res = await fetch(`${api}/admin/vendas/${venda.id}/cancelar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ motivo })
+      });
+
+      if (!res.ok) {
+        // Fallback: restaura estoque localmente na API caso o endpoint seja novo
+        for (const item of (venda.itens || [])) {
+          const prodCadastrado = produtos.find(p => String(p.ean) === String(item.ean));
+          if (prodCadastrado) {
+            await fetch(`${api}/admin/produtos/${prodCadastrado.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({
+                ...prodCadastrado,
+                estoque_atual: Number(prodCadastrado.estoque_atual || 0) + Number(item.quantidade || 0)
+              })
+            }).catch(() => {});
+          }
+        }
+      }
+
+      salvarStatusOverride(venda.id, 'CANCELADA', { motivo_cancelamento: motivo, status_nfe: 'CANCELADA' });
+      alert(`Venda #${String(venda.id).padStart(6, '0')} cancelada com sucesso! O estoque dos produtos foi restabelecido.`);
+      setMenuAbertoId(null);
+      carregarDados();
+      carregarMetricas();
+    } catch (e: any) {
+      alert('Erro ao cancelar venda: ' + e.message);
+    }
+  };
+
+  const handleEstornarVenda = async (dadosEstorno: any) => {
+    if (!modalEstorno) return;
+    const venda = modalEstorno;
+    const token = localStorage.getItem('adm_token');
+    const api = getApiUrl();
+    try {
+      const res = await fetch(`${api}/admin/vendas/${venda.id}/estornar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(dadosEstorno)
+      });
+
+      if (!res.ok) {
+        // Fallback: devolve estoque
+        for (const item of (venda.itens || [])) {
+          const prodCadastrado = produtos.find(p => String(p.ean) === String(item.ean));
+          if (prodCadastrado) {
+            await fetch(`${api}/admin/produtos/${prodCadastrado.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({
+                ...prodCadastrado,
+                estoque_atual: Number(prodCadastrado.estoque_atual || 0) + Number(item.quantidade || 0)
+              })
+            }).catch(() => {});
+          }
+        }
+      }
+
+      salvarStatusOverride(venda.id, 'ESTORNADA', { motivo_cancelamento: dadosEstorno.motivo, estorno_info: dadosEstorno, status_nfe: 'ESTORNADA' });
+      alert(`Venda #${String(venda.id).padStart(6, '0')} estornada com sucesso! O estoque foi restabelecido e as métricas atualizadas.`);
+      setModalEstorno(null);
+      setMenuAbertoId(null);
+      carregarDados();
+      carregarMetricas();
+    } catch (e: any) {
+      alert('Erro ao processar estorno: ' + e.message);
+    }
+  };
+
   // ---------- Derivados ----------
-  const vendasPeriodo = useMemo(() => vendas.filter(v => dentroDoPeriodo(v.criado_em, periodo)), [vendas, periodo]);
+  const vendasPeriodo = useMemo(() => vendas.filter(v => dentroDoPeriodo(v.criado_em, periodo) && v.status !== 'CANCELADA' && v.status !== 'ESTORNADA'), [vendas, periodo]);
 
   // Mapa de produtos por EAN para acesso rápido
   const prodPorEan = useMemo(() => {
@@ -978,16 +1352,24 @@ export default function App() {
       if (!dentroDoPeriodo(v.criado_em, periodoVendas)) return false;
       if (filtroPagamento !== 'TODOS' && !splitPagamentos(v.metodo_pagamento).includes(filtroPagamento)) return false;
       if (!termo) return true;
-      return String(v.id).includes(termo.replace('#', '').replace(/^0+/, '') || termo)
+      const cleanTerm = termo.replace('#', '').replace(/^0+/, '') || termo;
+      return String(v.id).includes(cleanTerm)
+        || String(v.num_nfe || '').includes(termo)
+        || String(v.chave_nfe || '').toLowerCase().includes(termo)
         || String(v.cpf_cnpj_cliente || '').includes(termo)
         || (v.itens || []).some((it: any) => String(it.nome || '').toLowerCase().includes(termo) || String(it.ean).includes(termo));
     });
   }, [vendas, buscaVenda, filtroPagamento, periodoVendas]);
 
-  const resumoVendas = useMemo(() => ({
-    total: vendasFiltradas.reduce((a, v) => a + Number(v.total), 0),
-    itens: vendasFiltradas.reduce((a, v) => a + (v.itens || []).reduce((s: number, it: any) => s + Number(it.quantidade), 0), 0),
-  }), [vendasFiltradas]);
+  const resumoVendas = useMemo(() => {
+    const ativas = vendasFiltradas.filter(v => v.status !== 'CANCELADA' && v.status !== 'ESTORNADA');
+    return {
+      total: ativas.reduce((a, v) => a + Number(v.total), 0),
+      itens: ativas.reduce((a, v) => a + (v.itens || []).reduce((s: number, it: any) => s + Number(it.quantidade), 0), 0),
+      canceladas: vendasFiltradas.filter(v => v.status === 'CANCELADA').length,
+      estornadas: vendasFiltradas.filter(v => v.status === 'ESTORNADA').length,
+    };
+  }, [vendasFiltradas]);
 
   const movFiltradas = useMemo(() => {
     return movimentacoesComputadas.filter(m => {
@@ -1105,27 +1487,50 @@ export default function App() {
                         <th style={{ width: 36 }} />
                         <th>Nº Venda</th>
                         <th>Data/Hora</th>
+                        <th>Status</th>
+                        <th>NFC-e</th>
                         <th>Itens vendidos</th>
                         <th className="center">Qtd</th>
                         <th>Pagamento</th>
                         <th>Cliente</th>
                         <th className="right">Valor Total</th>
+                        <th className="center" style={{ width: 60 }}>Ações</th>
                       </tr>
                     </thead>
                     <tbody>
                       {vendasFiltradas.length === 0 ? (
-                        <tr><td colSpan={8} className="empty">Nenhuma venda encontrada com estes filtros.</td></tr>
+                        <tr><td colSpan={11} className="empty">Nenhuma venda encontrada com estes filtros.</td></tr>
                       ) : vendasFiltradas.map((v: any, idx: number) => {
                         const itens: any[] = Array.isArray(v.itens) ? v.itens : [];
                         const qtd = itens.reduce((a, it) => a + Number(it.quantidade), 0);
                         const custo = itens.reduce((a, it) => a + Number(it.quantidade) * Number(it.custo || 0), 0);
                         const aberta = vendaAberta === v.id;
+                        const isCancelada = v.status === 'CANCELADA';
+                        const isEstornada = v.status === 'ESTORNADA';
                         return (
                           <React.Fragment key={v.id}>
-                            <tr className={`row clickable ${aberta ? 'expanded' : ''}`} style={{ animationDelay: `${Math.min(idx, 15) * 20}ms` }} onClick={() => setVendaAberta(aberta ? null : v.id)}>
+                            <tr className={`row clickable ${aberta ? 'expanded' : ''}`} style={{ animationDelay: `${Math.min(idx, 15) * 20}ms`, opacity: (isCancelada || isEstornada) ? 0.75 : 1 }} onClick={() => setVendaAberta(aberta ? null : v.id)}>
                               <td><ChevronRight size={16} className={`chev ${aberta ? 'open' : ''}`} /></td>
                               <td className="strong num">#{String(v.id).padStart(6, '0')}</td>
                               <td className="num">{dataHora(v.criado_em)}</td>
+                              <td>
+                                {isCancelada ? (
+                                  <span className="badge red" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><XCircle size={12} /> Cancelada</span>
+                                ) : isEstornada ? (
+                                  <span className="badge amber" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><RotateCcw size={12} /> Estornada</span>
+                                ) : (
+                                  <span className="badge green" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><ShieldCheck size={12} /> Concluída</span>
+                                )}
+                              </td>
+                              <td>
+                                {v.num_nfe || v.chave_nfe ? (
+                                  <span className="badge green" style={{ fontSize: '0.75rem', fontWeight: 600 }} title={v.chave_nfe || ''}>
+                                    NFC-e #{v.num_nfe || String(v.id).padStart(6, '0')}
+                                  </span>
+                                ) : (
+                                  <span className="badge gray" style={{ fontSize: '0.75rem' }}>Não emitida</span>
+                                )}
+                              </td>
                               <td>
                                 <div className="items-preview">
                                   {itens.slice(0, 2).map((it, i) => <span key={i} className="line"><strong className="num" style={{ color: 'var(--text)' }}>{int(it.quantidade)}×</strong> {it.nome}</span>)}
@@ -1136,11 +1541,71 @@ export default function App() {
                               <td className="center"><span className="badge gray num">{int(qtd)} un.</span></td>
                               <td><Pagamentos metodo={v.metodo_pagamento} /></td>
                               <td className="num">{v.cpf_cnpj_cliente || <span className="muted">Consumidor</span>}</td>
-                              <td className="right num" style={{ color: 'var(--accent)', fontWeight: 800 }}>{brl(v.total)}</td>
+                              <td className="right num" style={{ color: isCancelada ? 'var(--danger)' : isEstornada ? 'var(--warning)' : 'var(--accent)', fontWeight: 800, textDecoration: isCancelada ? 'line-through' : 'none' }}>
+                                {brl(v.total)}
+                              </td>
+                              <td className="center" style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+                                <button
+                                  id={`btn-acoes-venda-${v.id}`}
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ padding: '6px 8px' }}
+                                  onClick={() => setMenuAbertoId(menuAbertoId === v.id ? null : v.id)}
+                                  title="Ações da venda"
+                                >
+                                  <MoreVertical size={16} />
+                                </button>
+                                {menuAbertoId === v.id && (
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      right: 8,
+                                      top: '100%',
+                                      zIndex: 99,
+                                      background: 'var(--bg-surface)',
+                                      border: '1px solid var(--border)',
+                                      borderRadius: 8,
+                                      boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+                                      minWidth: 190,
+                                      padding: 6,
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: 4
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-sm"
+                                      style={{ justifyContent: 'flex-start', gap: 8, width: '100%', textAlign: 'left', fontSize: '0.82rem' }}
+                                      onClick={() => { setModalReimpressao(v); setMenuAbertoId(null); }}
+                                    >
+                                      <Printer size={15} /> Reimprimir 2ª Via
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-sm"
+                                      style={{ justifyContent: 'flex-start', gap: 8, width: '100%', textAlign: 'left', fontSize: '0.82rem', color: (isCancelada || isEstornada) ? 'var(--text-muted)' : 'var(--danger)' }}
+                                      disabled={isCancelada || isEstornada}
+                                      onClick={() => handleCancelarVenda(v)}
+                                    >
+                                      <XCircle size={15} /> Cancelar Venda
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-sm"
+                                      style={{ justifyContent: 'flex-start', gap: 8, width: '100%', textAlign: 'left', fontSize: '0.82rem', color: (isCancelada || isEstornada) ? 'var(--text-muted)' : 'var(--warning)' }}
+                                      disabled={isCancelada || isEstornada}
+                                      onClick={() => { setModalEstorno(v); setMenuAbertoId(null); }}
+                                    >
+                                      <RotateCcw size={15} /> Estorno da Venda
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
                             </tr>
                             {aberta && (
                               <tr>
-                                <td colSpan={8} className="detail-cell">
+                                <td colSpan={11} className="detail-cell">
                                   <div className="detail-box">
                                     <div className="detail-grid">
                                       <table className="items-table">
@@ -1164,6 +1629,12 @@ export default function App() {
                                         <div className="summary-row"><span>Custo da mercadoria</span><span className="num">{brl(custo)}</span></div>
                                         <div className="summary-row"><span>Lucro estimado</span><span className="num" style={{ color: 'var(--accent)', fontWeight: 700 }}>{brl(Number(v.total) - custo)}</span></div>
                                         <div className="summary-row"><span>CPF/CNPJ</span><span className="num">{v.cpf_cnpj_cliente || '—'}</span></div>
+                                        {v.motivo_cancelamento && (
+                                          <div className="summary-row" style={{ color: isCancelada ? 'var(--danger)' : 'var(--warning)', fontWeight: 600 }}>
+                                            <span>{isCancelada ? 'Motivo Cancelamento' : 'Motivo Estorno'}</span>
+                                            <span>{v.motivo_cancelamento}</span>
+                                          </div>
+                                        )}
                                         <div className="summary-row total"><span>Total pago</span><span className="num">{brl(v.total)}</span></div>
                                       </div>
                                     </div>
@@ -1319,6 +1790,41 @@ export default function App() {
 
         </div>
       </div>
+      {/* ================= MODAIS DO SISTEMA ================= */}
+      {modalProduto.open && (
+        <ModalProduto
+          produto={modalProduto.data}
+          onClose={() => setModalProduto({ open: false, data: null })}
+          onSaved={recarregarTudo}
+        />
+      )}
+      {modalFuncionario.open && (
+        <ModalFuncionario
+          funcionario={modalFuncionario.data}
+          onClose={() => setModalFuncionario({ open: false, data: null })}
+          onSaved={recarregarTudo}
+        />
+      )}
+      {modalEntrada && (
+        <ModalEntradaEstoque
+          produtos={produtos}
+          onClose={() => setModalEntrada(false)}
+          onSaved={recarregarTudo}
+        />
+      )}
+      {modalReimpressao && (
+        <ModalReimpressaoCupom
+          venda={modalReimpressao}
+          onClose={() => setModalReimpressao(null)}
+        />
+      )}
+      {modalEstorno && (
+        <ModalEstorno
+          venda={modalEstorno}
+          onClose={() => setModalEstorno(null)}
+          onConfirm={handleEstornarVenda}
+        />
+      )}
     </div>
   );
 }

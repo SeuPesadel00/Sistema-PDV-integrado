@@ -2,6 +2,18 @@ import React, { useState, useEffect, useRef } from "react";
 
 interface CartItem { id: string; ean: string; name: string; quantity: number; unitPrice: number; }
 interface Payment { id: string; method: string; value: number; authCode?: string; }
+interface ReceiptData {
+  itens: CartItem[];
+  total: number;
+  date: string;
+  cpfCnpj: string;
+  payments: Payment[];
+  chave_acesso?: string;
+  vendaId?: number | string;
+  numNfce?: number | string;
+  isSegundaVia?: boolean;
+  status?: string;
+}
 
 export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -27,20 +39,47 @@ export default function App() {
   
   const [cpfCnpj, setCpfCnpj] = useState("");
   const [isEmitting, setIsEmitting] = useState(false);
-  const [lastReceipt, setLastReceipt] = useState<{itens: CartItem[], total: number, date: string, cpfCnpj: string, payments: Payment[], chave_acesso?: string} | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const recebimentoInputRef = useRef<HTMLInputElement>(null);
 
   // CONFIGURAÇÃO DE REDE (MULTI-LOJAS)
   const apiUrl = "https://api-tailandia.onrender.com";
 
-  // MÓDULO DE SEGURANÇA E PERSISTÊNCIA DE SESSÃO
+  // MÓDULO DE SEGURANÇA E PERSISTÊNCIA DE SESSÃO DO CAIXA
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!sessionStorage.getItem('pdv_operatorName'));
   const [operatorName, setOperatorName] = useState(() => sessionStorage.getItem('pdv_operatorName') || "");
   const [matricula, setMatricula] = useState("");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // MÓDULO PAINEL ADMINISTRATIVO (PDV)
+  const [showAdminAuthModal, setShowAdminAuthModal] = useState(false);
+  const [adminAuthMatricula, setAdminAuthMatricula] = useState("");
+  const [adminAuthSenha, setAdminAuthSenha] = useState("");
+  const [adminAuthMostrarSenha, setAdminAuthMostrarSenha] = useState(false);
+  const [adminAuthLoading, setAdminAuthLoading] = useState(false);
+  const [adminAuthError, setAdminAuthError] = useState("");
+  const [adminToken, setAdminToken] = useState(() => sessionStorage.getItem('pdv_adminToken') || "");
+  const [adminName, setAdminName] = useState(() => sessionStorage.getItem('pdv_adminName') || "");
+
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [adminVendas, setAdminVendas] = useState<any[]>([]);
+  const [adminVendasLoading, setAdminVendasLoading] = useState(false);
+  const [adminPeriodo, setAdminPeriodo] = useState("hoje");
+  const [adminCustomDate, setAdminCustomDate] = useState("");
+  const [adminSearch, setAdminSearch] = useState("");
+  const [adminMenuAbertoId, setAdminMenuAbertoId] = useState<number | null>(null);
+  const [adminVendaExpandida, setAdminVendaExpandida] = useState<number | null>(null);
+
+  // Modal de Estorno de Venda (PDV)
+  const [showEstornoModal, setShowEstornoModal] = useState<any | null>(null);
+  const [estornoMotivo, setEstornoMotivo] = useState("Desistência do cliente");
+  const [estornoForma, setEstornoForma] = useState("DINHEIRO");
+  const [estornoNsu, setEstornoNsu] = useState("");
+  const [estornoObs, setEstornoObs] = useState("");
+  const [estornoLoading, setEstornoLoading] = useState(false);
 
   // Tema
   const [theme, setTheme] = useState(() => localStorage.getItem('pdv_theme') || 'dark');
@@ -106,12 +145,12 @@ export default function App() {
 
   // Focus management
   useEffect(() => {
-    if (isAuthenticated && !showRecebimento && !showExitModal && !showCloseRegister && !alertMsg && !printPrompt) {
+    if (isAuthenticated && !showRecebimento && !showExitModal && !showCloseRegister && !alertMsg && !printPrompt && !showAdminAuthModal && !showAdminPanel && !showEstornoModal) {
       inputRef.current?.focus();
     } else if (showRecebimento && !showPix && !showCard && !showPosAuth && !alertMsg && !printPrompt) {
       recebimentoInputRef.current?.focus();
     }
-  }, [isAuthenticated, showRecebimento, showPix, showCard, showPosAuth, showCloseRegister, showExitModal, alertMsg, printPrompt]);
+  }, [isAuthenticated, showRecebimento, showPix, showCard, showPosAuth, showCloseRegister, showExitModal, alertMsg, printPrompt, showAdminAuthModal, showAdminPanel, showEstornoModal]);
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = Math.round(cart.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) * 100) / 100;
@@ -135,6 +174,36 @@ export default function App() {
         if (e.key === "Enter" || e.key === "Escape") {
           e.preventDefault();
           setAlertMsg("");
+        }
+        return;
+      }
+
+      // Modais do Painel ADM
+      if (showEstornoModal) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowEstornoModal(null);
+          return;
+        }
+        return;
+      }
+
+      if (showAdminPanel) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowAdminPanel(false);
+          setAdminMenuAbertoId(null);
+          return;
+        }
+        return;
+      }
+
+      if (showAdminAuthModal) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowAdminAuthModal(false);
+          setAdminAuthError("");
+          return;
         }
         return;
       }
@@ -278,7 +347,7 @@ export default function App() {
   }, [
     isAuthenticated, showExitModal, showCloseRegister, showRecebimento, 
     showPix, showCard, showPosAuth, alertMsg, printPrompt, cart, resta,
-    posAuthCode, cardType, paymentValue
+    posAuthCode, cardType, paymentValue, showAdminAuthModal, showAdminPanel, showEstornoModal
   ]);
 
   const handleBarcodeSubmit = async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -367,7 +436,17 @@ export default function App() {
       const dataFiscal = await resFiscal.json();
       setIsEmitting(false);
       
-      const receiptData = { itens: cart, total: subtotal, date: new Date().toLocaleString('pt-BR'), cpfCnpj, payments, chave_acesso: dataFiscal.chave_acesso };
+      const receiptData: ReceiptData = {
+        itens: cart,
+        total: subtotal,
+        date: new Date().toLocaleString('pt-BR'),
+        cpfCnpj,
+        payments,
+        chave_acesso: dataFiscal.chave_acesso,
+        vendaId: dataVenda.id_venda,
+        numNfce: dataFiscal.numero_nfe || dataVenda.id_venda,
+        status: 'CONCLUIDA'
+      };
       
       // Cleanup screen
       setCart([]); setPayments([]); setCpfCnpj(""); setShowRecebimento(false);
@@ -378,6 +457,246 @@ export default function App() {
       setIsEmitting(false); 
       setAlertMsg("Erro ao registrar venda!"); 
     }
+  };
+
+  // ---------- FUNÇÕES DO PAINEL ADMINISTRATIVO (PDV) ----------
+  const carregarVendasAdmin = async (overrideToken?: string) => {
+    setAdminVendasLoading(true);
+    const token = overrideToken || adminToken || sessionStorage.getItem('pdv_token');
+    try {
+      const res = await fetch(`${apiUrl}/admin/vendas`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          // Aplica overrides de cancelamento e estorno salvos
+          const overridesRaw = localStorage.getItem('vendas_status_override');
+          const overrides: Record<string, any> = overridesRaw ? JSON.parse(overridesRaw) : {};
+          const mesclado = data.map((v: any) => {
+            if (overrides[v.id]) return { ...v, ...overrides[v.id] };
+            return v;
+          });
+          setAdminVendas(mesclado);
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao carregar vendas no Painel ADM:", err);
+    } finally {
+      setAdminVendasLoading(false);
+    }
+  };
+
+  const handleAbrirPainelAdm = () => {
+    if (adminToken && adminName) {
+      setShowAdminPanel(true);
+      carregarVendasAdmin(adminToken);
+    } else {
+      setAdminAuthMatricula("");
+      setAdminAuthSenha("");
+      setAdminAuthError("");
+      setShowAdminAuthModal(true);
+    }
+  };
+
+  const handleAdminAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminAuthMatricula.trim() || !adminAuthSenha.trim()) {
+      setAdminAuthError("Informe a matrícula e a senha do Administrador.");
+      return;
+    }
+    setAdminAuthLoading(true);
+    setAdminAuthError("");
+    try {
+      const res = await fetch(`${apiUrl}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matricula: adminAuthMatricula.trim(), senha: adminAuthSenha.trim() })
+      });
+      setAdminAuthLoading(false);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.nivel === 'ADMIN') {
+          setAdminToken(data.token);
+          setAdminName(data.nome);
+          sessionStorage.setItem('pdv_adminToken', data.token);
+          sessionStorage.setItem('pdv_adminName', data.nome);
+          setShowAdminAuthModal(false);
+          setShowAdminPanel(true);
+          carregarVendasAdmin(data.token);
+        } else {
+          setAdminAuthError("Acesso Negado: Usuário informado não tem permissão de Administrador!");
+        }
+      } else {
+        setAdminAuthError("Acesso Negado: Matrícula ou senha incorretos!");
+      }
+    } catch {
+      setAdminAuthLoading(false);
+      setAdminAuthError("Erro de comunicação com o servidor.");
+    }
+  };
+
+  const handleReimprimirSegundaVia = (venda: any) => {
+    const itensReimprimir: CartItem[] = (venda.itens || []).map((it: any) => ({
+      id: it.ean || Math.random().toString(),
+      ean: it.ean,
+      name: it.nome,
+      quantity: Number(it.quantidade),
+      unitPrice: Number(it.preco)
+    }));
+
+    const receiptData: ReceiptData = {
+      itens: itensReimprimir,
+      total: Number(venda.total),
+      date: new Date(venda.criado_em).toLocaleString('pt-BR'),
+      cpfCnpj: venda.cpf_cnpj_cliente || '',
+      payments: [{ id: '1', method: venda.metodo_pagamento || 'DINHEIRO', value: Number(venda.total) }],
+      chave_acesso: venda.chave_nfe,
+      vendaId: venda.id,
+      numNfce: venda.num_nfe || venda.id,
+      isSegundaVia: true,
+      status: venda.status
+    };
+
+    setLastReceipt(receiptData);
+    setAdminMenuAbertoId(null);
+    setTimeout(() => {
+      executePrint();
+      setTimeout(() => setLastReceipt(null), 1000);
+      setAlertMsg(`2ª Via da Venda #${String(venda.id).padStart(6, '0')} enviada para a impressora!`);
+    }, 150);
+  };
+
+  const handleCancelarVendaAdmin = async (venda: any) => {
+    if (venda.status === 'CANCELADA') {
+      alert('Esta venda já está cancelada.');
+      return;
+    }
+    const motivo = window.prompt(`Informe o motivo do cancelamento da Venda #${String(venda.id).padStart(6, '0')}:`, 'Desistência do cliente / Cancelamento solicitado no caixa');
+    if (motivo === null) return;
+
+    try {
+      const token = adminToken || sessionStorage.getItem('pdv_token');
+      await fetch(`${apiUrl}/admin/vendas/${venda.id}/cancelar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ motivo })
+      }).catch(() => {});
+
+      // Salva override local
+      const overridesRaw = localStorage.getItem('vendas_status_override');
+      const overrides = overridesRaw ? JSON.parse(overridesRaw) : {};
+      overrides[venda.id] = { status: 'CANCELADA', motivo_cancelamento: motivo, status_nfe: 'CANCELADA' };
+      localStorage.setItem('vendas_status_override', JSON.stringify(overrides));
+
+      setAdminVendas(prev => prev.map(v => v.id === venda.id ? { ...v, status: 'CANCELADA', motivo_cancelamento: motivo, status_nfe: 'CANCELADA' } : v));
+      setAdminMenuAbertoId(null);
+      alert(`Venda #${String(venda.id).padStart(6, '0')} cancelada com sucesso! O estoque foi atualizado e sincronizado com a retaguarda.`);
+    } catch (e: any) {
+      alert("Erro ao cancelar venda: " + e.message);
+    }
+  };
+
+  const handleAbrirModalEstorno = (venda: any) => {
+    setShowEstornoModal(venda);
+    setEstornoMotivo("Desistência do cliente");
+    setEstornoForma(venda.metodo_pagamento?.includes('PIX') ? 'PIX' : venda.metodo_pagamento?.includes('DINHEIRO') ? 'DINHEIRO' : 'CARTAO_MAQUININHA');
+    setEstornoNsu("");
+    setEstornoObs("");
+    setAdminMenuAbertoId(null);
+  };
+
+  const handleConfirmarEstornoAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showEstornoModal) return;
+    const venda = showEstornoModal;
+    setEstornoLoading(true);
+    try {
+      const token = adminToken || sessionStorage.getItem('pdv_token');
+      const estornoPayload = {
+        motivo: estornoMotivo,
+        forma_devolucao: estornoForma,
+        nsu_comprovante: estornoNsu,
+        observacoes: estornoObs
+      };
+
+      await fetch(`${apiUrl}/admin/vendas/${venda.id}/estornar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(estornoPayload)
+      }).catch(() => {});
+
+      // Salva override local
+      const overridesRaw = localStorage.getItem('vendas_status_override');
+      const overrides = overridesRaw ? JSON.parse(overridesRaw) : {};
+      overrides[venda.id] = { status: 'ESTORNADA', motivo_cancelamento: estornoMotivo, estorno_info: estornoPayload, status_nfe: 'ESTORNADA' };
+      localStorage.setItem('vendas_status_override', JSON.stringify(overrides));
+
+      setAdminVendas(prev => prev.map(v => v.id === venda.id ? { ...v, status: 'ESTORNADA', motivo_cancelamento: estornoMotivo, estorno_info: estornoPayload, status_nfe: 'ESTORNADA' } : v));
+      setShowEstornoModal(null);
+      alert(`Venda #${String(venda.id).padStart(6, '0')} estornada com sucesso! O valor e o estoque foram recompostos.`);
+
+      // Pergunta se deseja comprovante de estorno impresso
+      const querImprimir = window.confirm("Deseja imprimir o comprovante de estorno na impressora térmica?");
+      if (querImprimir) {
+        handleReimprimirSegundaVia({ ...venda, status: 'ESTORNADA' });
+      }
+    } catch (e: any) {
+      alert("Erro ao estornar venda: " + e.message);
+    } finally {
+      setEstornoLoading(false);
+    }
+  };
+
+  const matchDateFilter = (vendaDateStr: string, filtro: string, customDate: string) => {
+    if (!vendaDateStr) return false;
+    const d = new Date(vendaDateStr);
+    if (filtro === 'hoje') {
+      const hoje = new Date();
+      return d.getDate() === hoje.getDate() && d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
+    }
+    if (filtro === 'ontem') {
+      const ontem = new Date(Date.now() - 86400000);
+      return d.getDate() === ontem.getDate() && d.getMonth() === ontem.getMonth() && d.getFullYear() === ontem.getFullYear();
+    }
+    if (filtro === '7') {
+      return (Date.now() - d.getTime()) <= 7 * 86400000;
+    }
+    if (filtro === '30') {
+      return (Date.now() - d.getTime()) <= 30 * 86400000;
+    }
+    if (filtro === 'custom' && customDate) {
+      const [ano, mes, dia] = customDate.split('-').map(Number);
+      return d.getDate() === dia && (d.getMonth() + 1) === mes && d.getFullYear() === ano;
+    }
+    return true; // 'todas'
+  };
+
+  const vendasFiltradasAdmin = adminVendas.filter(v => {
+    if (!matchDateFilter(v.criado_em, adminPeriodo, adminCustomDate)) return false;
+    if (!adminSearch.trim()) return true;
+    const termo = adminSearch.trim().toLowerCase();
+    const cleanTerm = termo.replace('#', '').replace(/^0+/, '') || termo;
+    const idStr = String(v.id);
+    const nfeStr = String(v.num_nfe || '');
+    const chaveStr = String(v.chave_nfe || '').toLowerCase();
+    const cpfStr = String(v.cpf_cnpj_cliente || '');
+    const itensStr = (v.itens || []).map((it: any) => `${it.nome} ${it.ean}`).join(' ').toLowerCase();
+
+    return idStr.includes(cleanTerm)
+      || nfeStr.includes(termo)
+      || chaveStr.includes(termo)
+      || cpfStr.includes(termo)
+      || itensStr.includes(termo);
+  });
+
+  const resumoAdmin = {
+    totalVendas: vendasFiltradasAdmin.length,
+    faturamentoAtivo: vendasFiltradasAdmin
+      .filter(v => v.status !== 'CANCELADA' && v.status !== 'ESTORNADA')
+      .reduce((acc, v) => acc + Number(v.total || 0), 0),
+    canceladas: vendasFiltradasAdmin.filter(v => v.status === 'CANCELADA').length,
+    estornadas: vendasFiltradasAdmin.filter(v => v.status === 'ESTORNADA').length,
   };
 
   if (!isAuthenticated) {
@@ -459,6 +778,29 @@ export default function App() {
             <span className="status-badge">● ONLINE (Sefaz DF)</span>
             <span>Caixa: 01</span>
             <span>Operador: {operatorName}</span>
+            <button
+              id="btn-painel-adm"
+              type="button"
+              onClick={handleAbrirPainelAdm}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontWeight: 600,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(99, 102, 241, 0.4)',
+                transition: 'all 0.2s ease',
+              }}
+              title="Acessar o Painel do Administrador (Gestão e Consulta de Vendas)"
+            >
+              🛡️ Painel ADM
+            </button>
           </div>
         </header>
 
@@ -774,6 +1116,496 @@ export default function App() {
         </div>
       )}
 
+      {/* MODAL DE AUTENTICAÇÃO DO ADMINISTRADOR */}
+      {showAdminAuthModal && (
+        <div className="admin-modal-overlay" onClick={() => setShowAdminAuthModal(false)}>
+          <div className="login-card" style={{ maxWidth: '420px', width: '90%' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem' }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                🛡️ Autenticação Administrador
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowAdminAuthModal(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', textAlign: 'left' }}>
+              Informe as credenciais de um usuário com nível de <strong>Administrador</strong> para acessar o Painel ADM. A sessão atual do caixa continuará ativa.
+            </p>
+
+            {adminAuthError && (
+              <div style={{ padding: '10px', borderRadius: '8px', background: 'var(--danger-soft)', color: 'var(--danger)', fontSize: '0.84rem', marginBottom: '1rem', textAlign: 'left', fontWeight: 600 }}>
+                ⚠️ {adminAuthError}
+              </div>
+            )}
+
+            <form onSubmit={handleAdminAuthSubmit}>
+              <input
+                type="text"
+                placeholder="Matrícula Admin (Ex: 00001)"
+                maxLength={5}
+                value={adminAuthMatricula}
+                onChange={e => setAdminAuthMatricula(e.target.value)}
+                autoFocus
+              />
+              <div style={{ position: 'relative', width: '100%', marginBottom: '14px' }}>
+                <input
+                  type={adminAuthMostrarSenha ? "text" : "password"}
+                  placeholder="Senha Admin"
+                  value={adminAuthSenha}
+                  onChange={e => setAdminAuthSenha(e.target.value)}
+                  style={{ width: '100%', paddingRight: '44px', marginBottom: 0 }}
+                />
+                <button
+                  type="button"
+                  className="eye-toggle-btn"
+                  onClick={() => setAdminAuthMostrarSenha(v => !v)}
+                  title={adminAuthMostrarSenha ? "Ocultar senha" : "Ver senha"}
+                >
+                  {adminAuthMostrarSenha ? (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                      <line x1="1" y1="1" x2="23" y2="23"></line>
+                    </svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                  )}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '1rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAdminAuthModal(false)}
+                  style={{ flex: 1, padding: '12px', background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: '10px', color: 'var(--text)', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={adminAuthLoading}
+                  style={{ flex: 2, padding: '12px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  {adminAuthLoading ? "Validando..." : "Entrar no Painel ADM"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PAINEL ADMINISTRATIVO (CONSULTA & GESTÃO DE VENDAS) */}
+      {showAdminPanel && (
+        <div className="admin-modal-overlay" onClick={() => setShowAdminPanel(false)}>
+          <div className="admin-panel-box" onClick={e => e.stopPropagation()}>
+            <div className="admin-panel-header">
+              <h2>
+                🛡️ Painel ADM — Consulta & Gestão de Vendas
+                <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', background: 'var(--bg-app)', padding: '4px 10px', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                  Administrador: <strong>{adminName || 'Admin'}</strong>
+                </span>
+              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => carregarVendasAdmin()}
+                  className="admin-filter-btn"
+                  title="Atualizar lista de vendas"
+                >
+                  🔄 Atualizar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAdminPanel(false)}
+                  className="admin-filter-btn"
+                  style={{ padding: '8px 12px' }}
+                >
+                  ✕ Fechar (ESC)
+                </button>
+              </div>
+            </div>
+
+            {/* Barra de Filtros e Pesquisa */}
+            <div className="admin-toolbar">
+              <input
+                type="text"
+                className="admin-search-input"
+                placeholder="🔍 Pesquisar por Nº Venda (#123), NFC-e, EAN, Produto ou CPF..."
+                value={adminSearch}
+                onChange={e => setAdminSearch(e.target.value)}
+              />
+
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className={`admin-filter-btn ${adminPeriodo === 'hoje' ? 'active' : ''}`}
+                  onClick={() => { setAdminPeriodo('hoje'); setAdminCustomDate(''); }}
+                >
+                  Hoje
+                </button>
+                <button
+                  type="button"
+                  className={`admin-filter-btn ${adminPeriodo === 'ontem' ? 'active' : ''}`}
+                  onClick={() => { setAdminPeriodo('ontem'); setAdminCustomDate(''); }}
+                >
+                  Ontem
+                </button>
+                <button
+                  type="button"
+                  className={`admin-filter-btn ${adminPeriodo === '7' ? 'active' : ''}`}
+                  onClick={() => { setAdminPeriodo('7'); setAdminCustomDate(''); }}
+                >
+                  7 dias
+                </button>
+                <button
+                  type="button"
+                  className={`admin-filter-btn ${adminPeriodo === '30' ? 'active' : ''}`}
+                  onClick={() => { setAdminPeriodo('30'); setAdminCustomDate(''); }}
+                >
+                  30 dias
+                </button>
+                <button
+                  type="button"
+                  className={`admin-filter-btn ${adminPeriodo === 'todas' ? 'active' : ''}`}
+                  onClick={() => { setAdminPeriodo('todas'); setAdminCustomDate(''); }}
+                >
+                  Todas
+                </button>
+                <input
+                  type="date"
+                  className="admin-filter-btn"
+                  style={{ cursor: 'pointer' }}
+                  value={adminCustomDate}
+                  onChange={e => {
+                    setAdminCustomDate(e.target.value);
+                    if (e.target.value) setAdminPeriodo('custom');
+                  }}
+                  title="Filtrar por data específica"
+                />
+              </div>
+
+              {/* Resumo rápido */}
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: '15px', fontSize: '0.85rem' }}>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Vendas: </span>
+                  <strong>{resumoAdmin.totalVendas}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Faturamento Líquido: </span>
+                  <strong style={{ color: 'var(--accent)' }}>
+                    R$ {resumoAdmin.faturamentoAtivo.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </strong>
+                </div>
+                {resumoAdmin.canceladas > 0 && (
+                  <div>
+                    <span style={{ color: 'var(--danger)' }}>Canceladas: <strong>{resumoAdmin.canceladas}</strong></span>
+                  </div>
+                )}
+                {resumoAdmin.estornadas > 0 && (
+                  <div>
+                    <span style={{ color: 'var(--warning)' }}>Estornadas: <strong>{resumoAdmin.estornadas}</strong></span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Lista e Tabela de Vendas */}
+            <div className="admin-sales-scroll">
+              {adminVendasLoading ? (
+                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  Carregando vendas do sistema...
+                </div>
+              ) : vendasFiltradasAdmin.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  Nenhuma venda encontrada para os filtros selecionados.
+                </div>
+              ) : (
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '90px' }}>Nº Venda</th>
+                      <th style={{ width: '140px' }}>Data / Hora</th>
+                      <th style={{ width: '110px' }}>Status</th>
+                      <th style={{ width: '130px' }}>NFC-e</th>
+                      <th>Produtos / Detalhes</th>
+                      <th style={{ width: '120px' }}>Pagamento</th>
+                      <th style={{ width: '130px' }}>Cliente</th>
+                      <th style={{ width: '110px', textAlign: 'right' }}>Total R$</th>
+                      <th style={{ width: '60px', textAlign: 'center' }}>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vendasFiltradasAdmin.map((v: any) => {
+                      const itens = Array.isArray(v.itens) ? v.itens : [];
+                      const isCancelada = v.status === 'CANCELADA';
+                      const isEstornada = v.status === 'ESTORNADA';
+                      const expandida = adminVendaExpandida === v.id;
+
+                      return (
+                        <React.Fragment key={v.id}>
+                          <tr style={{ opacity: (isCancelada || isEstornada) ? 0.75 : 1 }}>
+                            <td>
+                              <strong style={{ color: 'var(--text)', fontFamily: 'monospace', fontSize: '0.95rem' }}>
+                                #{String(v.id).padStart(6, '0')}
+                              </strong>
+                            </td>
+                            <td style={{ color: 'var(--text-soft)', fontSize: '0.82rem' }}>
+                              {new Date(v.criado_em).toLocaleString('pt-BR')}
+                            </td>
+                            <td>
+                              {isCancelada ? (
+                                <span className="admin-badge red">✕ Cancelada</span>
+                              ) : isEstornada ? (
+                                <span className="admin-badge amber">↺ Estornada</span>
+                              ) : (
+                                <span className="admin-badge green">✓ Concluída</span>
+                              )}
+                            </td>
+                            <td>
+                              {v.num_nfe || v.chave_nfe ? (
+                                <span className="admin-badge green" style={{ fontSize: '0.74rem' }} title={v.chave_nfe || ''}>
+                                  NFC-e #{v.num_nfe || String(v.id).padStart(6, '0')}
+                                </span>
+                              ) : (
+                                <span className="admin-badge gray">Não emitida</span>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ color: 'var(--text-soft)' }}>
+                                  {itens.length > 0
+                                    ? `${itens[0].quantidade}x ${itens[0].nome}${itens.length > 1 ? ` (+${itens.length - 1} outros)` : ''}`
+                                    : 'Sem itens'}
+                                </span>
+                                {itens.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setAdminVendaExpandida(expandida ? null : v.id)}
+                                    style={{
+                                      background: 'var(--bg-surface-2)',
+                                      border: '1px solid var(--border)',
+                                      borderRadius: '4px',
+                                      color: 'var(--text-muted)',
+                                      fontSize: '0.72rem',
+                                      cursor: 'pointer',
+                                      padding: '2px 6px'
+                                    }}
+                                  >
+                                    {expandida ? 'Ocultar' : 'Ver todos'}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td style={{ fontSize: '0.82rem', color: 'var(--text-soft)' }}>
+                              {v.metodo_pagamento || '—'}
+                            </td>
+                            <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                              {v.cpf_cnpj_cliente || 'Consumidor'}
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 800, color: isCancelada ? 'var(--danger)' : isEstornada ? 'var(--warning)' : 'var(--accent)', textDecoration: isCancelada ? 'line-through' : 'none' }}>
+                              R$ {Number(v.total).toFixed(2).replace('.', ',')}
+                            </td>
+                            <td style={{ textAlign: 'center', position: 'relative' }}>
+                              <button
+                                type="button"
+                                onClick={() => setAdminMenuAbertoId(adminMenuAbertoId === v.id ? null : v.id)}
+                                style={{
+                                  background: 'var(--bg-surface-2)',
+                                  border: '1px solid var(--border)',
+                                  borderRadius: '6px',
+                                  color: 'var(--text)',
+                                  cursor: 'pointer',
+                                  padding: '4px 8px',
+                                  fontSize: '0.9rem',
+                                  lineHeight: 1
+                                }}
+                                title="Ações da venda"
+                              >
+                                •••
+                              </button>
+
+                              {adminMenuAbertoId === v.id && (
+                                <div className="admin-actions-menu">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReimprimirSegundaVia(v)}
+                                  >
+                                    🖨️ Reimprimir 2ª Via
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="danger"
+                                    disabled={isCancelada || isEstornada}
+                                    onClick={() => handleCancelarVendaAdmin(v)}
+                                  >
+                                    ✕ Cancelar Venda
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="warning"
+                                    disabled={isCancelada || isEstornada}
+                                    onClick={() => handleAbrirModalEstorno(v)}
+                                  >
+                                    ↺ Estorno da Venda
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+
+                          {/* Detalhamento de Itens Expandido */}
+                          {expandida && (
+                            <tr>
+                              <td colSpan={9} style={{ background: 'var(--bg-surface-2)', padding: '10px 16px' }}>
+                                <div style={{ fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <strong style={{ color: 'var(--text-muted)', marginBottom: '4px' }}>Itens da Venda #{String(v.id).padStart(6, '0')}:</strong>
+                                  {itens.map((it: any, i: number) => (
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--border)', padding: '3px 0' }}>
+                                      <span>
+                                        {it.quantidade}x <strong>{it.nome}</strong> <span style={{ color: 'var(--text-muted)' }}>({it.ean})</span>
+                                      </span>
+                                      <span>
+                                        R$ {Number(it.preco).toFixed(2).replace('.', ',')} un = <strong>R$ {(Number(it.quantidade) * Number(it.preco)).toFixed(2).replace('.', ',')}</strong>
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {v.motivo_cancelamento && (
+                                    <div style={{ marginTop: '6px', color: isCancelada ? 'var(--danger)' : 'var(--warning)', fontWeight: 600 }}>
+                                      {isCancelada ? 'Motivo do cancelamento: ' : 'Motivo do estorno: '}{v.motivo_cancelamento}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE ESTORNO DE VENDA */}
+      {showEstornoModal && (
+        <div className="admin-modal-overlay" onClick={() => setShowEstornoModal(null)}>
+          <div className="login-card" style={{ maxWidth: '480px', width: '90%' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem' }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                ↺ Estorno da Venda #{String(showEstornoModal.id).padStart(6, '0')}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowEstornoModal(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ background: 'var(--bg-surface-2)', padding: '12px', borderRadius: '10px', marginBottom: '1rem', border: '1px solid var(--border)', textAlign: 'left', fontSize: '0.86rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Valor a Estornar:</span>
+                <strong style={{ color: 'var(--accent)', fontSize: '1.05rem' }}>
+                  R$ {Number(showEstornoModal.total).toFixed(2).replace('.', ',')}
+                </strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Forma Original:</span>
+                <span>{showEstornoModal.metodo_pagamento || '—'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Data da Venda:</span>
+                <span>{new Date(showEstornoModal.criado_em).toLocaleString('pt-BR')}</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmarEstornoAdmin} style={{ textAlign: 'left' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-soft)', marginBottom: '4px' }}>
+                Motivo do Estorno
+              </label>
+              <select
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-input)', color: 'var(--text)', border: '1px solid var(--border-strong)', marginBottom: '12px' }}
+                value={estornoMotivo}
+                onChange={e => setEstornoMotivo(e.target.value)}
+              >
+                <option value="Desistência do cliente">Desistência do cliente</option>
+                <option value="Cobrança duplicada ou incorreta">Cobrança duplicada ou incorreta</option>
+                <option value="Defeito / Avaria na mercadoria">Defeito / Avaria na mercadoria</option>
+                <option value="Troca com devolução de valor">Troca com devolução de valor</option>
+                <option value="Outro">Outro motivo</option>
+              </select>
+
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-soft)', marginBottom: '4px' }}>
+                Forma de Devolução ao Cliente
+              </label>
+              <select
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-input)', color: 'var(--text)', border: '1px solid var(--border-strong)', marginBottom: '12px' }}
+                value={estornoForma}
+                onChange={e => setEstornoForma(e.target.value)}
+              >
+                <option value="DINHEIRO">Dinheiro (Devolução em Espécie no Caixa)</option>
+                <option value="PIX">Pix (Devolução / Transferência Pix)</option>
+                <option value="CARTAO_MAQUININHA">Maquininha (Estorno no POS / Maquininha)</option>
+              </select>
+
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-soft)', marginBottom: '4px' }}>
+                Código de Autorização / NSU / Comprovante (opcional)
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: NSU 984572 ou Código PIX"
+                value={estornoNsu}
+                onChange={e => setEstornoNsu(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-input)', color: 'var(--text)', border: '1px solid var(--border-strong)', marginBottom: '12px' }}
+              />
+
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-soft)', marginBottom: '4px' }}>
+                Observações Adicionais
+              </label>
+              <textarea
+                rows={2}
+                placeholder="Detalhes para registro na auditoria..."
+                value={estornoObs}
+                onChange={e => setEstornoObs(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-input)', color: 'var(--text)', border: '1px solid var(--border-strong)', marginBottom: '12px', resize: 'none' }}
+              />
+
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                ℹ️ Ao confirmar, a venda será marcada como <strong>ESTORNADA</strong>, o estoque será recomposto e os dados sincronizados com a retaguarda.
+              </p>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowEstornoModal(null)}
+                  style={{ flex: 1, padding: '12px', background: 'var(--bg-surface-2)', border: '1px solid var(--border)', borderRadius: '10px', color: 'var(--text)', cursor: 'pointer', fontWeight: 600 }}
+                  disabled={estornoLoading}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={estornoLoading}
+                  style={{ flex: 2, padding: '12px', background: 'var(--warning)', color: '#000', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 700 }}
+                >
+                  {estornoLoading ? "Processando..." : "Confirmar Estorno"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL DE SAÍDA / ESC */}
       {showExitModal && (
         <div className="pix-modal-overlay" style={{ zIndex: 1000 }}>
@@ -809,7 +1641,18 @@ export default function App() {
             <p style={{ margin: 0 }}>CNPJ: 00.000.000/0001-00</p>
             <p style={{ margin: 0 }}>Telefone: (61) 9999-9999</p>
             <p style={{ margin: 0, marginTop: '5px' }}>Data: {lastReceipt.date.split(' ')[0]} - {lastReceipt.date.split(' ')[1]}</p>
-            <p style={{ margin: 0, fontWeight: 'bold' }}>LOJA: 0101 &nbsp; PDV: 001 &nbsp; SEQ: {Math.floor(Math.random() * 900000) + 100000}</p>
+            <p style={{ margin: 0, fontWeight: 'bold' }}>
+              LOJA: 0101 &nbsp; PDV: 001 &nbsp; VENDA Nº: #{String(lastReceipt.vendaId || '000001').padStart(6, '0')}
+            </p>
+            {lastReceipt.isSegundaVia && (
+              <p style={{ margin: '2px 0 0 0', fontWeight: 'bold', fontSize: '11px' }}>*** 2ª VIA DO DOCUMENTO AUXILIAR ***</p>
+            )}
+            {lastReceipt.status === 'CANCELADA' && (
+              <p style={{ margin: '2px 0 0 0', fontWeight: 'bold', fontSize: '11px', color: 'black' }}>*** VENDA CANCELADA ***</p>
+            )}
+            {lastReceipt.status === 'ESTORNADA' && (
+              <p style={{ margin: '2px 0 0 0', fontWeight: 'bold', fontSize: '11px', color: 'black' }}>*** VENDA ESTORNADA ***</p>
+            )}
           </div>
           
           <div style={{ textAlign: 'center', margin: '10px 0', borderTop: '1px dashed black', borderBottom: '1px dashed black', padding: '5px 0' }}>
@@ -890,7 +1733,7 @@ export default function App() {
               <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=NFCe_TAILANDIA" alt="QR Code NFC-e" style={{ width: '80px', height: '80px' }} />
               <div style={{ fontSize: '9px', textAlign: 'left' }}>
                 <p style={{ fontWeight: 'bold' }}>{lastReceipt.cpfCnpj ? `CONSUMIDOR: ${lastReceipt.cpfCnpj}` : 'CONSUMIDOR NAO IDENTIFICADO'}</p>
-                <p>NFC-e n. 276272 Serie 9</p>
+                <p>NFC-e n. {lastReceipt.numNfce || lastReceipt.vendaId || '276272'} Serie 9</p>
                 <p>Emissao: {lastReceipt.date}</p>
                 <p>Protocolo de Autorizacao: 353240</p>
               </div>

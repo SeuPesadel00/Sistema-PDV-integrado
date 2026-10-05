@@ -56,6 +56,11 @@ async function garantirSchema() {
     await client.query('ALTER TABLE vendas_itens ADD COLUMN IF NOT EXISTS produto_nome VARCHAR(100)')
     await client.query('ALTER TABLE vendas_itens ADD COLUMN IF NOT EXISTS preco_custo NUMERIC(10, 2)')
 
+    // Status da venda para controle de cancelamentos e estornos
+    await client.query("ALTER TABLE vendas ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'CONCLUIDA'")
+    await client.query("ALTER TABLE vendas ADD COLUMN IF NOT EXISTS motivo_cancelamento TEXT")
+    await client.query("ALTER TABLE vendas ADD COLUMN IF NOT EXISTS estorno_info JSONB")
+
     // Livro-razão de estoque: toda entrada (cadastro/reposição) e saída (venda/ajuste) fica registrada
     await client.query(`
       CREATE TABLE IF NOT EXISTS movimentacoes_estoque (
@@ -271,9 +276,25 @@ fastify.put('/admin/funcionarios/:id', async (request, reply) => {
 fastify.delete('/admin/funcionarios/:id', async (request, reply) => {
   const { id } = request.params
   try {
+    const { rows } = await pool.query('SELECT matricula, nome, cpf FROM funcionarios WHERE id=$1', [id])
+    if (rows.length === 0) {
+      return reply.status(404).send({ error: 'Funcionário não encontrado' })
+    }
+    const func = rows[0]
+    await pool.query(
+      `INSERT INTO notas_fiscais_logs (status, mensagem, retorno_sefaz) VALUES ($1, $2, $3)`,
+      [
+        'EXCLUSAO_FUNCIONARIO',
+        `Exclusão de funcionário: ${func.nome} (Matrícula: ${func.matricula}, CPF: ${func.cpf}). Histórico de vendas, métricas e movimentações de estoque foram preservados integralmente.`,
+        'Auditoria interna'
+      ]
+    )
     await pool.query('DELETE FROM funcionarios WHERE id=$1', [id])
-    return { sucesso: true }
-  } catch(e) { return reply.status(500).send({error: 'Erro ao excluir funcionário'}) }
+    return { sucesso: true, mensagem: `Funcionário ${func.nome} excluído com sucesso.` }
+  } catch(e) {
+    console.error('[ERRO /admin/funcionarios/:id DELETE]', e.message)
+    return reply.status(500).send({error: 'Erro ao excluir funcionário: ' + e.message})
+  }
 })
 
 // ---------- VENDAS (CONSULTA) ----------
@@ -284,6 +305,13 @@ fastify.get('/admin/vendas', async (request, reply) => {
   try {
     const { rows } = await pool.query(`
       SELECT v.id, v.total, v.metodo_pagamento, v.cpf_cnpj_cliente, v.criado_em,
+             COALESCE(v.status, 'CONCLUIDA') AS status,
+             v.motivo_cancelamento,
+             v.estorno_info,
+             v.status_nfe,
+             v.chave_nfe,
+             v.num_nfe,
+             v.protocolo_nfe,
              COALESCE(
                json_agg(json_build_object(
                  'ean', vi.produto_ean,
@@ -305,6 +333,130 @@ fastify.get('/admin/vendas', async (request, reply) => {
   } catch(e) { console.error('[ERRO /admin/vendas]', e.message); return reply.status(500).send({error: 'Erro ao buscar vendas'}) }
 })
 
+// Cancelar Venda (com estorno automático de estoque)
+fastify.post('/admin/vendas/:id/cancelar', async (request, reply) => {
+  const { id } = request.params
+  const { motivo } = request.body || {}
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const resVenda = await client.query('SELECT * FROM vendas WHERE id = $1 FOR UPDATE', [id])
+    if (resVenda.rows.length === 0) {
+      await client.query('ROLLBACK')
+      return reply.status(404).send({ error: 'Venda não encontrada' })
+    }
+    const venda = resVenda.rows[0]
+    if (venda.status === 'CANCELADA') {
+      await client.query('ROLLBACK')
+      return reply.status(400).send({ error: 'Esta venda já se encontra cancelada' })
+    }
+
+    // 1. Atualiza status da venda
+    await client.query(
+      "UPDATE vendas SET status = 'CANCELADA', motivo_cancelamento = $1, status_nfe = 'CANCELADA' WHERE id = $2",
+      [motivo || 'Cancelamento solicitado pelo estabelecimento', id]
+    )
+
+    // 2. Devolve os itens ao estoque dos produtos
+    const resItens = await client.query('SELECT * FROM vendas_itens WHERE venda_id = $1', [id])
+    for (const item of resItens.rows) {
+      await client.query(
+        'UPDATE produtos SET estoque_atual = estoque_atual + $1 WHERE ean = $2',
+        [item.quantidade, item.produto_ean]
+      )
+      await registrarMovimentacao(client, {
+        produto_id: null,
+        ean: item.produto_ean,
+        nome: item.produto_nome,
+        tipo: 'CANCELAMENTO_VENDA',
+        quantidade: Number(item.quantidade),
+        custo: Number(item.preco_custo || 0),
+        venda_id: id,
+        usuario_id: request.user?.id
+      })
+    }
+
+    // 3. Auditoria
+    await client.query(
+      'INSERT INTO notas_fiscais_logs (venda_id, status, mensagem, retorno_sefaz) VALUES ($1, $2, $3, $4)',
+      [id, 'VENDA_CANCELADA', `Cancelamento da venda #${id}. Motivo: ${motivo || 'Sem motivo'}`, 'Cancelado com sucesso']
+    )
+
+    await client.query('COMMIT')
+    return { sucesso: true, mensagem: `Venda #${id} cancelada com sucesso e estoque atualizado.` }
+  } catch(e) {
+    await client.query('ROLLBACK')
+    fastify.log.error(e)
+    return reply.status(500).send({ error: 'Erro ao cancelar venda: ' + e.message })
+  } finally {
+    client.release()
+  }
+})
+
+// Estornar Venda (com registro de motivo, comprovante e devolução ao estoque)
+fastify.post('/admin/vendas/:id/estornar', async (request, reply) => {
+  const { id } = request.params
+  const { motivo, forma_devolucao, nsu_comprovante, observacoes } = request.body || {}
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const resVenda = await client.query('SELECT * FROM vendas WHERE id = $1 FOR UPDATE', [id])
+    if (resVenda.rows.length === 0) {
+      await client.query('ROLLBACK')
+      return reply.status(404).send({ error: 'Venda não encontrada' })
+    }
+    const venda = resVenda.rows[0]
+    if (venda.status === 'ESTORNADA' || venda.status === 'CANCELADA') {
+      await client.query('ROLLBACK')
+      return reply.status(400).send({ error: `Esta venda já está ${venda.status.toLowerCase()}` })
+    }
+
+    const estornoPayload = JSON.stringify({
+      motivo, forma_devolucao, nsu_comprovante, observacoes, data: new Date().toISOString()
+    })
+
+    // 1. Atualiza status da venda
+    await client.query(
+      "UPDATE vendas SET status = 'ESTORNADA', motivo_cancelamento = $1, estorno_info = $2 WHERE id = $3",
+      [motivo || 'Estorno financeiro efetuado', estornoPayload, id]
+    )
+
+    // 2. Devolve os itens ao estoque
+    const resItens = await client.query('SELECT * FROM vendas_itens WHERE venda_id = $1', [id])
+    for (const item of resItens.rows) {
+      await client.query(
+        'UPDATE produtos SET estoque_atual = estoque_atual + $1 WHERE ean = $2',
+        [item.quantidade, item.produto_ean]
+      )
+      await registrarMovimentacao(client, {
+        produto_id: null,
+        ean: item.produto_ean,
+        nome: item.produto_nome,
+        tipo: 'ESTORNO_VENDA',
+        quantidade: Number(item.quantidade),
+        custo: Number(item.preco_custo || 0),
+        venda_id: id,
+        usuario_id: request.user?.id
+      })
+    }
+
+    // 3. Auditoria
+    await client.query(
+      'INSERT INTO notas_fiscais_logs (venda_id, status, mensagem, retorno_sefaz) VALUES ($1, $2, $3, $4)',
+      [id, 'VENDA_ESTORNADA', `Estorno da venda #${id}. Forma: ${forma_devolucao || 'Dinheiro'}. NSU: ${nsu_comprovante || 'N/A'}`, 'Estorno efetuado']
+    )
+
+    await client.query('COMMIT')
+    return { sucesso: true, mensagem: `Estorno da venda #${id} registrado com sucesso.` }
+  } catch(e) {
+    await client.query('ROLLBACK')
+    fastify.log.error(e)
+    return reply.status(500).send({ error: 'Erro ao registrar estorno: ' + e.message })
+  } finally {
+    client.release()
+  }
+})
+
 // ---------- MÉTRICAS ----------
 
 // Desempenho por produto: vendido x investido x lucro. ?dias=N filtra o período (vazio = tudo)
@@ -324,6 +476,7 @@ fastify.get('/admin/metricas/produtos', async (request, reply) => {
         JOIN vendas v ON v.id = vi.venda_id
         LEFT JOIN produtos p ON p.ean = vi.produto_ean
         WHERE ($1::int IS NULL OR v.criado_em >= NOW() - make_interval(days => $1::int))
+          AND COALESCE(v.status, 'CONCLUIDA') NOT IN ('CANCELADA', 'ESTORNADA')
         GROUP BY vi.produto_ean
       ),
       entradas AS (
