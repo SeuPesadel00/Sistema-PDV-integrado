@@ -1,5 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Package, LayoutDashboard, LogOut, Receipt } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  Users, Package, LayoutDashboard, LogOut, Receipt, Sun, Moon, Search, ChevronRight,
+  TrendingUp, Wallet, ShoppingCart, Trophy, PiggyBank, TriangleAlert, Boxes, Store,
+  ArrowDownToLine, ArrowUpFromLine, Lock, ArrowUpDown, Ticket
+} from 'lucide-react';
 
 const DEFAULT_API = 'https://api-tailandia.onrender.com';
 
@@ -11,95 +15,138 @@ export function getApiUrl(): string {
   return DEFAULT_API;
 }
 
-const theme = {
-  bgMain: '#111827', // Fundo escuro igual ao PDV
-  bgPanel: '#1f2937', // Painel lateral e caixas
-  bgApp: '#f3f4f6', // Fundo cinza claro para o conteúdo do ADM
-  accent: '#10b981', // Verde esmeralda (padrão original)
-  textMain: '#1f2937',
-  textLight: '#f9fafb',
-  textMuted: '#9ca3af',
-  danger: '#ef4444',
-  border: '#374151'
+// ==========================================
+// FORMATAÇÃO (padrão brasileiro: vírgula nos centavos)
+// ==========================================
+const brl = (v: any) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const int = (v: any) => Number(v || 0).toLocaleString('pt-BR');
+const pct = (v: number) => `${(Number.isFinite(v) ? v : 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+const dataHora = (d: any) => d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+const toInputNum = (v: any) => (v === undefined || v === null || v === '') ? '' : Number(v).toFixed(2).replace('.', ',');
+// Aceita "6,50", "6.50" e "1.234,56"
+const parseNum = (s: string) => {
+  const t = String(s ?? '').trim();
+  if (!t) return NaN;
+  return Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t);
 };
 
-const styles = {
-  overlay: { position: 'fixed' as const, inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
-  modal: { backgroundColor: 'white', borderRadius: '8px', padding: '30px', width: '500px', maxHeight: '90vh', overflowY: 'auto' as const, boxShadow: '0 10px 25px rgba(0,0,0,0.2)' },
-  inputGroup: { marginBottom: '14px' },
-  label: { display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#374151', marginBottom: '4px' },
-  input: { width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.95rem', boxSizing: 'border-box' as const },
-  btnPrimary: { backgroundColor: theme.accent, color: 'white', border: 'none', padding: '10px 20px', borderRadius: '4px', fontWeight: 'bold' as const, cursor: 'pointer', fontSize: '0.95rem' },
-  btnSecondary: { backgroundColor: '#6b7280', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.95rem' },
-  th: { padding: '12px 16px', fontSize: '0.8rem', fontWeight: 600, color: 'white', backgroundColor: theme.bgPanel, textAlign: 'left' as const },
-  td: { padding: '12px 16px', fontSize: '0.85rem', color: theme.textMain, borderBottom: '1px solid #e5e7eb', textAlign: 'left' as const },
+const PAG_LABEL: Record<string, string> = {
+  DINHEIRO: 'Dinheiro', PIX: 'Pix', CARTAO_CREDITO: 'Crédito', CARTAO_DEBITO: 'Débito', POS: 'Maquininha',
+  CREDITO: 'Crédito', DEBITO: 'Débito', 'MÚLTIPLOS': 'Múltiplos'
+};
+const PAG_COR: Record<string, string> = { DINHEIRO: 'green', PIX: 'blue', CARTAO_CREDITO: 'violet', CARTAO_DEBITO: 'amber', POS: 'gray', 'MÚLTIPLOS': 'gray' };
+const splitPagamentos = (m: string) => String(m || '').split(',').map(s => s.replace(/\(.*\)/, '').trim()).filter(Boolean);
+
+const PERIODOS = [
+  { id: '1', label: '24h' },
+  { id: '7', label: '7 dias' },
+  { id: '30', label: '30 dias' },
+  { id: '', label: 'Tudo' },
+];
+
+const MOV_INFO: Record<string, { label: string; cor: string; entrada: boolean }> = {
+  SALDO_INICIAL: { label: 'Saldo inicial', cor: 'gray', entrada: true },
+  ENTRADA_CADASTRO: { label: 'Cadastro', cor: 'green', entrada: true },
+  ENTRADA_REPOSICAO: { label: 'Reposição', cor: 'blue', entrada: true },
+  VENDA: { label: 'Venda', cor: 'violet', entrada: false },
+  AJUSTE_SAIDA: { label: 'Ajuste / Perda', cor: 'red', entrada: false },
 };
 
 // ==========================================
-// TELA DE LOGIN (IDÊNTICA AO PDV)
+// TEMA CLARO / ESCURO
 // ==========================================
-function LoginScreen({ onLogin }: { onLogin: (nome: string) => void }) {
+type Tema = 'dark' | 'light';
+function useTema() {
+  const [tema, setTema] = useState<Tema>(() => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'));
+  useEffect(() => {
+    document.documentElement.dataset.theme = tema;
+    localStorage.setItem('adm_theme', tema);
+  }, [tema]);
+  const alternar = useCallback(() => setTema(t => (t === 'dark' ? 'light' : 'dark')), []);
+  return { tema, alternar };
+}
+
+function ThemeToggle({ tema, onToggle, className = '' }: { tema: Tema; onToggle: () => void; className?: string }) {
+  const escuro = tema === 'dark';
+  return (
+    <button id="btn-alternar-tema" type="button" className={`theme-toggle ${className}`} onClick={onToggle} title="Alternar tema claro/escuro">
+      {escuro ? <Moon size={17} /> : <Sun size={17} />}
+      <span>{escuro ? 'Modo escuro' : 'Modo claro'}</span>
+      <span className={`toggle-track ${escuro ? 'on' : ''}`}><span className="toggle-thumb" /></span>
+    </button>
+  );
+}
+
+// ==========================================
+// TELA DE LOGIN
+// ==========================================
+function LoginScreen({ onLogin, tema, onToggleTema }: { onLogin: (nome: string) => void; tema: Tema; onToggleTema: () => void }) {
   const [matricula, setMatricula] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
+  const [entrando, setEntrando] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
+    setEntrando(true);
     const api = getApiUrl();
     try {
-      const res = await fetch(`${api}/auth`, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ matricula, senha }) 
+      const res = await fetch(`${api}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matricula, senha })
       });
-      if (res.status === 429) {
-        setErro('Muitas tentativas! Aguarde 15 minutos por segurança.');
-        return;
-      }
-      if (!res.ok) { 
-        setErro('Acesso Negado: Matrícula ou senha incorretos, ou servidor falhou.'); 
-        return; 
-      }
+      if (res.status === 429) { setErro('Muitas tentativas! Aguarde alguns instantes.'); return; }
+      if (!res.ok) { setErro('Acesso negado: matrícula ou senha incorretos.'); return; }
       const data = await res.json();
-      if (data.nivel !== 'ADMIN') { setErro('Acesso Negado: Você não tem permissão de Administrador.'); return; }
+      if (data.nivel !== 'ADMIN') { setErro('Acesso negado: você não tem permissão de Administrador.'); return; }
       localStorage.setItem('adm_token', data.token);
       onLogin(data.nome);
-    } catch { 
-      setErro(`Erro crítico: Servidor Banco de Dados Offline (${api}).`); 
+    } catch {
+      setErro(`Servidor offline (${api}).`);
+    } finally {
+      setEntrando(false);
     }
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', backgroundColor: theme.bgMain, alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, sans-serif', position: 'relative' }}>
-      <form onSubmit={handleSubmit} style={{ backgroundColor: theme.bgPanel, padding: '3rem', borderRadius: '16px', border: `1px solid ${theme.border}`, textAlign: 'center', minWidth: '350px', position: 'relative' }}>
-        <h2 style={{ color: theme.accent, marginBottom: '2rem' }}>🔒 ACESSO RESTRITO (ADM)</h2>
-        {erro && <div style={{ color: theme.danger, marginBottom: '1rem', fontSize: '0.9rem', fontWeight: 'bold' }}>{erro}</div>}
-        
-        <input type="text" placeholder="Matrícula (Ex: 00001)" maxLength={5} value={matricula} onChange={e => setMatricula(e.target.value)} 
-          style={{ width: '100%', padding: '1rem', marginBottom: '1rem', backgroundColor: theme.border, color: 'white', border: 'none', borderRadius: '8px', boxSizing: 'border-box' }} />
-        
-        <input type="password" placeholder="Senha" value={senha} onChange={e => setSenha(e.target.value)} 
-          style={{ width: '100%', padding: '1rem', marginBottom: '2rem', backgroundColor: theme.border, color: 'white', border: 'none', borderRadius: '8px', boxSizing: 'border-box' }} />
-        
-        <button type="submit" style={{ width: '100%', padding: '1rem', backgroundColor: theme.accent, color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}>
-          ENTRAR NO PAINEL
+    <main className="login-bg">
+      <div className="floating-toggle"><ThemeToggle tema={tema} onToggle={onToggleTema} /></div>
+      <form onSubmit={handleSubmit} className="card login-card">
+        <div className="brand-logo" style={{ width: 52, height: 52, margin: '0 auto', borderRadius: 14 }}><Lock size={24} /></div>
+        <h1>Acesso Restrito</h1>
+        <p>Retaguarda • Tailândia Distribuidora</p>
+        {erro && <div className="login-error">{erro}</div>}
+        <input id="login-matricula" className="input" type="text" placeholder="Matrícula (ex: 00001)" maxLength={5} value={matricula} onChange={e => setMatricula(e.target.value)} />
+        <input id="login-senha" className="input" type="password" placeholder="Senha" value={senha} onChange={e => setSenha(e.target.value)} />
+        <button id="login-entrar" type="submit" className="btn btn-primary" disabled={entrando} style={{ width: '100%', justifyContent: 'center', padding: 13, marginTop: 8 }}>
+          {entrando ? 'Entrando...' : 'Entrar no painel'}
         </button>
       </form>
-    </div>
+    </main>
   );
 }
 
+// ==========================================
+// MODAL PRODUTO (cadastro = entrada de mercadoria)
+// ==========================================
 function ModalProduto({ produto, onClose, onSaved }: any) {
   const [ean, setEan] = useState(produto?.ean || '');
   const [nome, setNome] = useState(produto?.nome || '');
-  const [precoCusto, setPrecoCusto] = useState(produto?.preco_custo !== undefined && produto?.preco_custo !== null ? produto.preco_custo.toString() : '');
-  const [precoVenda, setPrecoVenda] = useState(produto?.preco_venda !== undefined && produto?.preco_venda !== null ? produto.preco_venda.toString() : '');
-  const [estoque, setEstoque] = useState(produto?.estoque_atual !== undefined && produto?.estoque_atual !== null ? produto.estoque_atual.toString() : '');
+  const [precoCusto, setPrecoCusto] = useState(toInputNum(produto?.preco_custo));
+  const [precoVenda, setPrecoVenda] = useState(toInputNum(produto?.preco_venda));
+  const [estoque, setEstoque] = useState(produto?.estoque_atual !== undefined && produto?.estoque_atual !== null ? String(produto.estoque_atual) : '');
   const [salvando, setSalvando] = useState(false);
-  
+
+  const custoN = parseNum(precoCusto) || 0;
+  const vendaN = parseNum(precoVenda);
+  const estoqueN = parseInt(estoque, 10);
+  const margem = vendaN > 0 ? ((vendaN - custoN) / vendaN) * 100 : NaN;
+  const diffEstoque = Number.isFinite(estoqueN) ? estoqueN - (produto ? Number(produto.estoque_atual) : 0) : 0;
+
   const handleSave = async () => {
-    if (!ean || !nome || precoVenda === '' || estoque === '') {
+    if (!ean || !nome || !Number.isFinite(vendaN) || !Number.isFinite(estoqueN)) {
       return alert('Preencha os campos obrigatórios (EAN, Nome, Preço de Venda e Estoque).');
     }
     const token = localStorage.getItem('adm_token');
@@ -107,24 +154,18 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
     setSalvando(true);
     try {
       const res = await fetch(produto ? `${api}/admin/produtos/${produto.id}` : `${api}/admin/produtos`, {
-        method: produto ? 'PUT' : 'POST', 
+        method: produto ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ 
-          ean, 
-          nome, 
-          preco_custo: Number(precoCusto) || 0, 
-          preco_venda: Number(precoVenda), 
-          estoque_atual: Number(estoque) 
-        })
+        body: JSON.stringify({ ean, nome, preco_custo: custoN, preco_venda: vendaN, estoque_atual: estoqueN })
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         alert(errData.error || 'Erro ao salvar o produto no servidor.');
         return;
       }
-      onSaved(); 
+      onSaved();
       onClose();
-    } catch(err) {
+    } catch {
       alert('Erro de comunicação com o servidor da API.');
     } finally {
       setSalvando(false);
@@ -132,18 +173,32 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
   };
 
   return (
-    <div style={styles.overlay} onClick={onClose}><div style={styles.modal} onClick={e=>e.stopPropagation()}>
-      <h3 style={{marginTop:0, marginBottom:'20px', color: theme.textMain}}>{produto?'Editar Produto':'Novo Produto'}</h3>
-      <div style={styles.inputGroup}><label style={styles.label}>Código de Barras (EAN)</label><input value={ean} onChange={e=>setEan(e.target.value)} style={styles.input} /></div>
-      <div style={styles.inputGroup}><label style={styles.label}>Nome do Produto</label><input value={nome} onChange={e=>setNome(e.target.value)} style={styles.input} /></div>
-      <div style={styles.inputGroup}><label style={styles.label}>Preço de Custo (R$)</label><input type="number" step="0.01" value={precoCusto} onChange={e=>setPrecoCusto(e.target.value)} style={styles.input} /></div>
-      <div style={styles.inputGroup}><label style={styles.label}>Preço de Venda (R$)</label><input type="number" step="0.01" value={precoVenda} onChange={e=>setPrecoVenda(e.target.value)} style={styles.input} /></div>
-      <div style={{...styles.inputGroup, marginBottom:'20px'}}><label style={styles.label}>{produto ? 'Quantidade em Estoque' : 'Estoque Inicial'}</label><input type="number" min="0" value={estoque} onChange={e=>setEstoque(e.target.value)} style={styles.input} /></div>
-      <div style={{display:'flex', gap:'10px', justifyContent:'flex-end'}}>
-        <button onClick={onClose} disabled={salvando} style={styles.btnSecondary}>Cancelar</button>
-        <button onClick={handleSave} disabled={salvando} style={styles.btnPrimary}>{salvando ? 'Salvando...' : 'Salvar Produto'}</button>
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>{produto ? 'Editar Produto' : 'Novo Produto'}</h3>
+        <div className="field"><label className="label">Código de Barras (EAN)</label><input id="prod-ean" className="input" value={ean} onChange={e => setEan(e.target.value)} /></div>
+        <div className="field"><label className="label">Nome do Produto</label><input id="prod-nome" className="input" value={nome} onChange={e => setNome(e.target.value)} /></div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="field"><label className="label">Preço de Custo (R$)</label><input id="prod-custo" className="input" inputMode="decimal" placeholder="0,00" value={precoCusto} onChange={e => setPrecoCusto(e.target.value)} /></div>
+          <div className="field"><label className="label">Preço de Venda (R$)</label><input id="prod-venda" className="input" inputMode="decimal" placeholder="0,00" value={precoVenda} onChange={e => setPrecoVenda(e.target.value)} /></div>
+        </div>
+        {Number.isFinite(margem) && (
+          <div className={`hint ${margem >= 0 ? 'green' : 'red'}`} style={{ marginTop: -6, marginBottom: 12 }}>
+            Margem: {pct(margem)} • Lucro por unidade: {brl(vendaN - custoN)}
+          </div>
+        )}
+        <div className="field">
+          <label className="label">{produto ? 'Quantidade em Estoque' : 'Estoque Inicial (entrada)'}</label>
+          <input id="prod-estoque" className="input" type="number" min="0" value={estoque} onChange={e => setEstoque(e.target.value)} />
+          {diffEstoque > 0 && <div className="hint green">+{int(diffEstoque)} un. serão registradas como {produto ? 'reposição' : 'entrada'} • investimento de {brl(diffEstoque * custoN)}</div>}
+          {diffEstoque < 0 && <div className="hint red">{int(diffEstoque)} un. serão registradas como ajuste/perda de estoque</div>}
+        </div>
+        <div className="modal-actions">
+          <button onClick={onClose} disabled={salvando} className="btn btn-ghost">Cancelar</button>
+          <button id="prod-salvar" onClick={handleSave} disabled={salvando} className="btn btn-primary">{salvando ? 'Salvando...' : 'Salvar Produto'}</button>
+        </div>
       </div>
-    </div></div>
+    </div>
   );
 }
 
@@ -173,7 +228,7 @@ function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
       }
       onSaved();
       onClose();
-    } catch(e: any) {
+    } catch (e: any) {
       alert(e.message);
     } finally {
       setSalvando(false);
@@ -181,23 +236,180 @@ function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
   };
 
   return (
-    <div style={styles.overlay} onClick={onClose}><div style={styles.modal} onClick={e=>e.stopPropagation()}>
-      <h3 style={{marginTop:0, marginBottom:'20px', color: theme.textMain}}>{funcionario?'Editar Funcionário':'Novo Funcionário'}</h3>
-      <div style={styles.inputGroup}><label style={styles.label}>Matrícula (Gerada Auto)</label><input value={matricula} readOnly style={{...styles.input, backgroundColor: '#f3f4f6'}} /></div>
-      <div style={styles.inputGroup}><label style={styles.label}>Nome Completo</label><input value={nome} onChange={e=>setNome(e.target.value)} style={styles.input} /></div>
-      <div style={styles.inputGroup}><label style={styles.label}>CPF</label><input value={cpf} onChange={e=>setCpf(e.target.value)} placeholder="000.000.000-00" style={styles.input} /></div>
-      {!funcionario && <div style={styles.inputGroup}><label style={styles.label}>Senha de Acesso</label><input type="password" value={senha} onChange={e=>setSenha(e.target.value)} style={styles.input} /></div>}
-      <div style={{...styles.inputGroup, marginBottom:'20px'}}><label style={styles.label}>Nível de Acesso</label>
-        <select value={nivel} onChange={e=>setNivel(e.target.value)} style={styles.input}>
-          <option value="CAIXA">Caixa (PDV)</option>
-          <option value="ADMIN">Administrador (Retaguarda)</option>
-        </select>
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>{funcionario ? 'Editar Funcionário' : 'Novo Funcionário'}</h3>
+        <div className="field"><label className="label">Matrícula (Gerada Auto)</label><input className="input" value={matricula} readOnly /></div>
+        <div className="field"><label className="label">Nome Completo</label><input id="func-nome" className="input" value={nome} onChange={e => setNome(e.target.value)} /></div>
+        <div className="field"><label className="label">CPF</label><input id="func-cpf" className="input" value={cpf} onChange={e => setCpf(e.target.value)} placeholder="000.000.000-00" /></div>
+        {!funcionario && <div className="field"><label className="label">Senha de Acesso</label><input id="func-senha" className="input" type="password" value={senha} onChange={e => setSenha(e.target.value)} /></div>}
+        <div className="field">
+          <label className="label">Nível de Acesso</label>
+          <select id="func-nivel" className="input" value={nivel} onChange={e => setNivel(e.target.value)}>
+            <option value="CAIXA">Caixa (PDV)</option>
+            <option value="ADMIN">Administrador (Retaguarda)</option>
+          </select>
+        </div>
+        <div className="modal-actions">
+          <button onClick={onClose} disabled={salvando} className="btn btn-ghost">Cancelar</button>
+          <button id="func-salvar" onClick={handleSave} disabled={salvando} className="btn btn-primary">{salvando ? 'Salvando...' : 'Salvar Funcionário'}</button>
+        </div>
       </div>
-      <div style={{display:'flex', gap:'10px', justifyContent:'flex-end'}}>
-        <button onClick={onClose} disabled={salvando} style={styles.btnSecondary}>Cancelar</button>
-        <button onClick={handleSave} disabled={salvando} style={styles.btnPrimary}>{salvando ? 'Salvando...' : 'Salvar Funcionário'}</button>
+    </div>
+  );
+}
+
+// ==========================================
+// COMPONENTES DE UI
+// ==========================================
+function Kpi({ label, value, foot, icon, cor = 'green', hero = false, delay = 0 }: any) {
+  const corVar: Record<string, [string, string]> = {
+    green: ['var(--accent-soft)', 'var(--accent)'], blue: ['var(--info-soft)', 'var(--info)'],
+    violet: ['var(--violet-soft)', 'var(--violet)'], amber: ['var(--warning-soft)', 'var(--warning)'],
+    red: ['var(--danger-soft)', 'var(--danger)'],
+  };
+  const [bg, fg] = corVar[cor] || corVar.green;
+  return (
+    <div className={`card kpi ${hero ? 'hero' : ''}`} style={{ animationDelay: `${delay}ms` }}>
+      <div className="kpi-head">
+        <span className="kpi-label">{label}</span>
+        <span className="kpi-icon" style={hero ? undefined : { background: bg, color: fg }}>{icon}</span>
       </div>
-    </div></div>
+      <div className="kpi-value">{value}</div>
+      {foot && <div className="kpi-foot">{foot}</div>}
+    </div>
+  );
+}
+
+function Pagamentos({ metodo }: { metodo: string }) {
+  return (
+    <div className="pay-list">
+      {splitPagamentos(metodo).map((m, i) => <span key={i} className={`badge ${PAG_COR[m] || 'gray'}`}>{PAG_LABEL[m] || m}</span>)}
+    </div>
+  );
+}
+
+function Segmented({ value, onChange, options, id }: { value: string; onChange: (v: string) => void; options: { id: string; label: string }[]; id?: string }) {
+  return (
+    <div className="segmented" id={id}>
+      {options.map(o => <button key={o.id || 'all'} type="button" className={value === o.id ? 'active' : ''} onClick={() => onChange(o.id)}>{o.label}</button>)}
+    </div>
+  );
+}
+
+const dentroDoPeriodo = (data: any, dias: string) => !dias || (Date.now() - new Date(data).getTime()) <= Number(dias) * 86400000;
+
+// ==========================================
+// RANKING DE PRODUTOS (Painel Geral)
+// ==========================================
+type SortKey = 'qtd_vendida' | 'receita' | 'lucro' | 'margem' | 'valor_investido' | 'estoque_atual';
+
+function RankingProdutos({ metricas, carregando }: { metricas: any[]; carregando: boolean }) {
+  const [busca, setBusca] = useState('');
+  const [escopo, setEscopo] = useState('vendidos');
+  const [sort, setSort] = useState<SortKey>('qtd_vendida');
+
+  const linhas = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    const base = metricas
+      .map(m => {
+        const receita = Number(m.receita), lucro = Number(m.lucro);
+        return { ...m, receita, lucro, qtd_vendida: Number(m.qtd_vendida), valor_investido: Number(m.valor_investido), custo_vendido: Number(m.custo_vendido), margem: receita > 0 ? (lucro / receita) * 100 : 0 };
+      })
+      .filter(m => escopo === 'todos' || m.qtd_vendida > 0)
+      .filter(m => !termo || String(m.nome).toLowerCase().includes(termo) || String(m.ean).includes(termo));
+    return base.sort((a, b) => (Number(b[sort] ?? -Infinity) - Number(a[sort] ?? -Infinity)) || (b.qtd_vendida - a.qtd_vendida));
+  }, [metricas, busca, escopo, sort]);
+
+  const maxQtd = Math.max(1, ...linhas.map(l => l.qtd_vendida));
+  const tot = linhas.reduce((a, l) => ({ qtd: a.qtd + l.qtd_vendida, receita: a.receita + l.receita, custo: a.custo + l.custo_vendido, lucro: a.lucro + l.lucro, inv: a.inv + l.valor_investido }), { qtd: 0, receita: 0, custo: 0, lucro: 0, inv: 0 });
+
+  const Th = ({ k, children, className = 'right' }: { k: SortKey; children: React.ReactNode; className?: string }) => (
+    <th className={`sortable ${className}`} onClick={() => setSort(k)} style={sort === k ? { color: 'var(--accent)' } : undefined}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{children}<ArrowUpDown size={12} /></span>
+    </th>
+  );
+
+  return (
+    <section className="table-wrap fade-up" style={{ animationDelay: '120ms' }}>
+      <div className="table-toolbar">
+        <div>
+          <h2 className="section-title"><Trophy size={18} color="var(--warning)" /> Ranking de Produtos Vendidos</h2>
+          <div className="muted" style={{ fontSize: '0.8rem', marginTop: 4 }}>Clique nos cabeçalhos para ordenar • {int(linhas.length)} produto(s)</div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Segmented id="ranking-escopo" value={escopo} onChange={setEscopo} options={[{ id: 'vendidos', label: 'Vendidos' }, { id: 'todos', label: 'Todos' }]} />
+          <div className="search">
+            <Search size={15} />
+            <input id="ranking-busca" className="input" placeholder="Buscar produto ou EAN..." value={busca} onChange={e => setBusca(e.target.value)} />
+          </div>
+        </div>
+      </div>
+      <div className="table-scroll">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th className="center" style={{ width: 60 }}>#</th>
+              <th>Produto</th>
+              <Th k="qtd_vendida" className="">Unidades vendidas</Th>
+              <Th k="receita">Faturamento</Th>
+              <th className="right">Custo</th>
+              <Th k="lucro">Lucro bruto</Th>
+              <Th k="margem">Margem</Th>
+              <Th k="valor_investido">Investido</Th>
+              <Th k="estoque_atual">Estoque</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.length === 0 ? (
+              <tr><td colSpan={9} className="empty">{carregando ? 'Carregando métricas...' : 'Nenhum produto vendido no período. As métricas começam a contar a cada venda no PDV.'}</td></tr>
+            ) : linhas.map((l, i) => (
+              <tr key={l.ean} className="row" style={{ animationDelay: `${Math.min(i, 15) * 25}ms` }}>
+                <td className="center"><span className={`rank ${i < 3 && l.qtd_vendida > 0 ? `r${i + 1}` : ''}`} style={{ margin: '0 auto' }}>{i + 1}</span></td>
+                <td>
+                  <div className="prod-cell">
+                    <span className="prod-name">{l.nome}</span>
+                    <span className="prod-ean">{l.ean}{l.ultima_venda ? ` • última venda ${dataHora(l.ultima_venda)}` : ''}</span>
+                  </div>
+                </td>
+                <td className="bar-cell">
+                  <div className="bar-top"><strong className="num" style={{ color: 'var(--text)' }}>{int(l.qtd_vendida)} un.</strong><span className="muted num">{int(l.num_vendas)} venda(s)</span></div>
+                  <div className="bar"><span style={{ width: `${(l.qtd_vendida / maxQtd) * 100}%` }} /></div>
+                </td>
+                <td className="right num strong">{brl(l.receita)}</td>
+                <td className="right num">{brl(l.custo_vendido)}</td>
+                <td className="right num" style={{ color: l.lucro >= 0 ? 'var(--accent)' : 'var(--danger)', fontWeight: 700 }}>{brl(l.lucro)}</td>
+                <td className="right">
+                  {l.qtd_vendida > 0
+                    ? <span className={`badge ${l.margem >= 30 ? 'green' : l.margem >= 10 ? 'amber' : 'red'}`}>{pct(l.margem)}</span>
+                    : <span className="badge gray">sem vendas</span>}
+                </td>
+                <td className="right num">{brl(l.valor_investido)}<div className="muted" style={{ fontSize: '0.74rem' }}>{int(l.qtd_entrada)} un. entraram</div></td>
+                <td className="right">
+                  {l.estoque_atual === null || l.estoque_atual === undefined
+                    ? <span className="badge gray">removido</span>
+                    : <span className={`badge ${l.estoque_atual >= 10 ? 'green' : 'red'}`}>{int(l.estoque_atual)} un.</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          {linhas.length > 0 && (
+            <tfoot>
+              <tr>
+                <td colSpan={2} className="strong" style={{ background: 'var(--bg-surface-2)' }}>Total</td>
+                <td className="num strong" style={{ background: 'var(--bg-surface-2)' }}>{int(tot.qtd)} un.</td>
+                <td className="right num strong" style={{ background: 'var(--bg-surface-2)' }}>{brl(tot.receita)}</td>
+                <td className="right num" style={{ background: 'var(--bg-surface-2)' }}>{brl(tot.custo)}</td>
+                <td className="right num" style={{ background: 'var(--bg-surface-2)', color: 'var(--accent)', fontWeight: 800 }}>{brl(tot.lucro)}</td>
+                <td className="right" style={{ background: 'var(--bg-surface-2)' }}><span className="badge green">{pct(tot.receita > 0 ? (tot.lucro / tot.receita) * 100 : 0)}</span></td>
+                <td className="right num strong" style={{ background: 'var(--bg-surface-2)' }}>{brl(tot.inv)}</td>
+                <td style={{ background: 'var(--bg-surface-2)' }} />
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -205,17 +417,32 @@ function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
 // PAINEL ADMINISTRATIVO PRINCIPAL
 // ==========================================
 export default function App() {
+  const { tema, alternar } = useTema();
   const [adminName, setAdminName] = useState<string | null>(() => localStorage.getItem('adm_operatorName'));
   const [activeTab, setActiveTab] = useState('dashboard');
   const [produtos, setProdutos] = useState<any[]>([]);
   const [funcionarios, setFuncionarios] = useState<any[]>([]);
   const [vendas, setVendas] = useState<any[]>([]);
+  const [metricas, setMetricas] = useState<any[]>([]);
+  const [movimentacoes, setMovimentacoes] = useState<any[]>([]);
+  const [carregandoMetricas, setCarregandoMetricas] = useState(true);
+  const [periodo, setPeriodo] = useState('');
   const [filtroPagamento, setFiltroPagamento] = useState('TODOS');
-  
+  const [buscaVenda, setBuscaVenda] = useState('');
+  const [periodoVendas, setPeriodoVendas] = useState('');
+  const [vendaAberta, setVendaAberta] = useState<number | null>(null);
+  const [filtroMov, setFiltroMov] = useState('TODOS');
+
   const [modalProduto, setModalProduto] = useState<any>({ open: false, data: null });
   const [modalFuncionario, setModalFuncionario] = useState<any>({ open: false, data: null });
 
-  const carregarDados = async () => {
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('adm_operatorName');
+    localStorage.removeItem('adm_token');
+    setAdminName(null);
+  }, []);
+
+  const carregarDados = useCallback(async () => {
     const token = localStorage.getItem('adm_token');
     if (!token) return;
     const headers = { 'Authorization': `Bearer ${token}` };
@@ -223,225 +450,388 @@ export default function App() {
     try {
       const resP = await fetch(`${api}/admin/produtos`, { headers });
       if (resP.status === 401) { handleLogout(); return; }
-      
+
       const [dP, dF, dV] = await Promise.all([
         resP.json(),
         fetch(`${api}/admin/funcionarios`, { headers }).then(r => r.json()),
         fetch(`${api}/admin/vendas`, { headers }).then(r => r.json())
       ]);
-      
+
       if (Array.isArray(dP)) setProdutos(dP);
       if (Array.isArray(dF)) setFuncionarios(dF);
       if (Array.isArray(dV)) setVendas(dV);
-    } catch(e) {}
-  };
+    } catch { /* servidor indisponível: tenta de novo no próximo ciclo */ }
+  }, [handleLogout]);
 
-  useEffect(() => { 
-    if (adminName) {
-      carregarDados();
-      const interval = setInterval(carregarDados, 3000);
-      return () => clearInterval(interval);
+  const carregarMetricas = useCallback(async () => {
+    const token = localStorage.getItem('adm_token');
+    if (!token) return;
+    const headers = { 'Authorization': `Bearer ${token}` };
+    const api = getApiUrl();
+    try {
+      const [dM, dMov] = await Promise.all([
+        fetch(`${api}/admin/metricas/produtos${periodo ? `?dias=${periodo}` : ''}`, { headers }).then(r => r.json()),
+        fetch(`${api}/admin/movimentacoes`, { headers }).then(r => r.json()),
+      ]);
+      if (Array.isArray(dM)) setMetricas(dM);
+      if (Array.isArray(dMov)) setMovimentacoes(dMov);
+    } catch { /* ignora */ } finally {
+      setCarregandoMetricas(false);
     }
-  }, [adminName]);
+  }, [periodo]);
+
+  useEffect(() => {
+    if (!adminName) return;
+    carregarDados();
+    const interval = setInterval(carregarDados, 3000);
+    return () => clearInterval(interval);
+  }, [adminName, carregarDados]);
+
+  useEffect(() => {
+    if (!adminName) return;
+    setCarregandoMetricas(true);
+    carregarMetricas();
+    const interval = setInterval(carregarMetricas, 8000);
+    return () => clearInterval(interval);
+  }, [adminName, carregarMetricas]);
+
+  const recarregarTudo = useCallback(() => { carregarDados(); carregarMetricas(); }, [carregarDados, carregarMetricas]);
 
   const handleLogin = (nome: string) => {
     localStorage.setItem('adm_operatorName', nome);
     setAdminName(nome);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('adm_operatorName');
-    localStorage.removeItem('adm_token');
-    setAdminName(null);
-  };
+  // ---------- Derivados ----------
+  const vendasPeriodo = useMemo(() => vendas.filter(v => dentroDoPeriodo(v.criado_em, periodo)), [vendas, periodo]);
+  const kpis = useMemo(() => {
+    const receita = metricas.reduce((a, m) => a + Number(m.receita), 0);
+    const custo = metricas.reduce((a, m) => a + Number(m.custo_vendido), 0);
+    const unidades = metricas.reduce((a, m) => a + Number(m.qtd_vendida), 0);
+    const investido = metricas.reduce((a, m) => a + Number(m.valor_investido), 0);
+    const faturamentoVendas = vendasPeriodo.reduce((a, v) => a + Number(v.total), 0);
+    const valorEstoque = produtos.reduce((a, p) => a + Math.max(0, Number(p.estoque_atual)) * Number(p.preco_custo || 0), 0);
+    return {
+      receita: faturamentoVendas || receita, lucro: receita - custo, margem: receita > 0 ? ((receita - custo) / receita) * 100 : 0,
+      unidades, investido, valorEstoque, numVendas: vendasPeriodo.length,
+      ticket: vendasPeriodo.length ? faturamentoVendas / vendasPeriodo.length : 0,
+    };
+  }, [metricas, vendasPeriodo, produtos]);
 
-  if (!adminName) return <LoginScreen onLogin={handleLogin} />;
+  const vendasFiltradas = useMemo(() => {
+    const termo = buscaVenda.trim().toLowerCase();
+    return vendas.filter(v => {
+      if (!dentroDoPeriodo(v.criado_em, periodoVendas)) return false;
+      if (filtroPagamento !== 'TODOS' && !splitPagamentos(v.metodo_pagamento).includes(filtroPagamento)) return false;
+      if (!termo) return true;
+      return String(v.id).includes(termo.replace('#', '').replace(/^0+/, '') || termo)
+        || String(v.cpf_cnpj_cliente || '').includes(termo)
+        || (v.itens || []).some((it: any) => String(it.nome || '').toLowerCase().includes(termo) || String(it.ean).includes(termo));
+    });
+  }, [vendas, buscaVenda, filtroPagamento, periodoVendas]);
 
-  const vendasFiltradas = filtroPagamento === 'TODOS' ? vendas : vendas.filter(v => v.metodo_pagamento === filtroPagamento);
+  const resumoVendas = useMemo(() => ({
+    total: vendasFiltradas.reduce((a, v) => a + Number(v.total), 0),
+    itens: vendasFiltradas.reduce((a, v) => a + (v.itens || []).reduce((s: number, it: any) => s + Number(it.quantidade), 0), 0),
+  }), [vendasFiltradas]);
+
+  const movFiltradas = useMemo(() => movimentacoes.filter(m => filtroMov === 'TODOS' || (filtroMov === 'ENTRADAS' ? MOV_INFO[m.tipo]?.entrada : !MOV_INFO[m.tipo]?.entrada)), [movimentacoes, filtroMov]);
+  const resumoMov = useMemo(() => {
+    const entradas = movimentacoes.filter(m => MOV_INFO[m.tipo]?.entrada);
+    return {
+      investido: entradas.reduce((a, m) => a + Number(m.valor_total), 0),
+      unidades: entradas.reduce((a, m) => a + Number(m.quantidade), 0),
+      reposicoes: movimentacoes.filter(m => m.tipo === 'ENTRADA_REPOSICAO' || m.tipo === 'ENTRADA_CADASTRO').length,
+      perdas: movimentacoes.filter(m => m.tipo === 'AJUSTE_SAIDA').reduce((a, m) => a + Number(m.valor_total), 0),
+    };
+  }, [movimentacoes]);
+
+  if (!adminName) return <LoginScreen onLogin={handleLogin} tema={tema} onToggleTema={alternar} />;
+
+  const tabs = [
+    { id: 'dashboard', label: 'Painel Geral', icon: <LayoutDashboard size={19} /> },
+    { id: 'vendas', label: 'Histórico de Vendas', icon: <Receipt size={19} /> },
+    { id: 'produtos', label: 'Produtos e Estoque', icon: <Package size={19} /> },
+    { id: 'movimentacoes', label: 'Entradas de Estoque', icon: <Boxes size={19} /> },
+    { id: 'funcionarios', label: 'Equipe / Funcionários', icon: <Users size={19} /> },
+  ];
 
   return (
-    <div style={{ display: 'flex', height: '100vh', backgroundColor: theme.bgApp, fontFamily: 'system-ui, sans-serif' }}>
-      
-      {modalProduto.open && <ModalProduto produto={modalProduto.data} onClose={() => setModalProduto({ open: false, data: null })} onSaved={carregarDados} />}
+    <div className="app-shell">
+      {modalProduto.open && <ModalProduto produto={modalProduto.data} onClose={() => setModalProduto({ open: false, data: null })} onSaved={recarregarTudo} />}
       {modalFuncionario.open && <ModalFuncionario funcionario={modalFuncionario.data} onClose={() => setModalFuncionario({ open: false, data: null })} onSaved={carregarDados} />}
 
-      {/* MENU LATERAL ESCURO */}
-      <div style={{ width: '250px', backgroundColor: theme.bgPanel, color: 'white', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '20px', borderBottom: `1px solid ${theme.border}`, textAlign: 'center' }}>
-          <h2 style={{ margin: 0, color: theme.accent }}>🏢 Retaguarda</h2>
-          <div style={{ fontSize: '0.8rem', color: theme.textMuted, marginTop: '5px' }}>Logado: {adminName}</div>
+      {/* MENU LATERAL */}
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-title"><span className="brand-logo"><Store size={19} /></span> Retaguarda</div>
+          <div className="brand-sub">Logado como <strong style={{ color: 'var(--text-soft)' }}>{adminName}</strong></div>
         </div>
-
-        <div style={{ padding: '20px 0', display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          {[
-            { id: 'dashboard', label: 'Painel Geral', icon: <LayoutDashboard size={20} /> },
-            { id: 'vendas', label: 'Histórico de Vendas', icon: <Receipt size={20} /> },
-            { id: 'produtos', label: 'Produtos e Estoque', icon: <Package size={20} /> },
-            { id: 'funcionarios', label: 'Equipe / Funcionarios', icon: <Users size={20} /> },
-          ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
-              display: 'flex', alignItems: 'center', gap: '15px', border: 'none', width: '100%',
-              color: activeTab === tab.id ? 'white' : theme.textMuted,
-              padding: '15px 25px', cursor: 'pointer', textAlign: 'left', fontSize: '1rem',
-              backgroundColor: activeTab === tab.id ? theme.border : 'transparent', 
-              borderLeft: activeTab === tab.id ? `4px solid ${theme.accent}` : '4px solid transparent',
-              transition: 'all 0.2s'
-            }}>
+        <nav className="nav">
+          {tabs.map(tab => (
+            <button key={tab.id} id={`nav-${tab.id}`} onClick={() => setActiveTab(tab.id)} className={`nav-item ${activeTab === tab.id ? 'active' : ''}`}>
               {tab.icon} {tab.label}
             </button>
           ))}
+        </nav>
+        <div className="sidebar-footer">
+          <ThemeToggle tema={tema} onToggle={alternar} />
+          <button id="btn-sair" onClick={handleLogout} className="logout"><LogOut size={18} /> Sair do Sistema</button>
         </div>
+      </aside>
 
-        <div style={{ marginTop: 'auto', padding: '20px', borderTop: `1px solid ${theme.border}` }}>
-          <button onClick={handleLogout} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '1rem', width: '100%' }}>
-            <LogOut size={20} /> Sair do Sistema
-          </button>
-        </div>
-      </div>
+      <div className="main">
+        <div className="content">
 
-      {/* CONTEÚDO PRINCIPAL (BRANCO/CINZA CLARO) */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        
-        <div style={{ flex: 1, padding: '30px', overflowY: 'auto' }}>
-          
+          {/* ================= PAINEL GERAL ================= */}
           {activeTab === 'dashboard' && (
             <div>
-              <h2 style={{ color: theme.textMain, marginBottom: '20px' }}>Visão Geral</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                <div style={{ padding: '25px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.9rem', color: theme.textMuted, fontWeight: 'bold' }}>VENDAS TOTAIS</div>
-                  <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: theme.textMain }}>{vendas.length}</div>
+              <div className="page-header">
+                <div>
+                  <h1 className="page-title">Visão Geral</h1>
+                  <p className="page-sub">Desempenho de vendas, lucro e investimento em mercadoria</p>
                 </div>
-                <div style={{ padding: '25px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.9rem', color: theme.textMuted, fontWeight: 'bold' }}>TICKET MÉDIO</div>
-                  <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: theme.textMain }}>R$ {vendas.length > 0 ? (vendas.reduce((acc, v) => acc + Number(v.total), 0) / vendas.length).toFixed(2) : '0.00'}</div>
-                </div>
-                <div style={{ padding: '25px', backgroundColor: theme.accent, borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)', fontWeight: 'bold' }}>FATURAMENTO BRUTO</div>
-                  <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'white' }}>R$ {vendas.reduce((acc, v) => acc + Number(v.total), 0).toFixed(2)}</div>
-                </div>
-                <div style={{ padding: '25px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.9rem', color: theme.textMuted, fontWeight: 'bold' }}>PRODUTOS CADASTRADOS</div>
-                  <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: theme.textMain }}>{produtos.length}</div>
-                </div>
-                <div style={{ padding: '25px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.9rem', color: theme.textMuted, fontWeight: 'bold' }}>ALERTA DE ESTOQUE (Baixo)</div>
-                  <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: theme.danger }}>{produtos.filter(p => p.estoque_atual < 10).length} un</div>
-                </div>
-                <div style={{ padding: '25px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ fontSize: '0.9rem', color: theme.textMuted, fontWeight: 'bold' }}>EQUIPE ATIVA</div>
-                  <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: theme.textMain }}>{funcionarios.filter(f => f.status === 'ATIVO').length}</div>
-                </div>
+                <Segmented id="dash-periodo" value={periodo} onChange={setPeriodo} options={PERIODOS} />
               </div>
+
+              <div className="kpi-grid">
+                <Kpi hero label="Faturamento" value={brl(kpis.receita)} foot={`${int(kpis.numVendas)} venda(s) no período`} icon={<TrendingUp size={18} />} />
+                <Kpi label="Lucro bruto" value={brl(kpis.lucro)} foot={`Margem média de ${pct(kpis.margem)}`} icon={<Wallet size={18} />} cor="green" delay={40} />
+                <Kpi label="Ticket médio" value={brl(kpis.ticket)} foot="Valor médio por venda" icon={<Ticket size={18} />} cor="blue" delay={80} />
+                <Kpi label="Unidades vendidas" value={int(kpis.unidades)} foot={`${int(metricas.filter(m => Number(m.qtd_vendida) > 0).length)} produto(s) diferentes`} icon={<ShoppingCart size={18} />} cor="violet" delay={120} />
+                <Kpi label="Investido em mercadoria" value={brl(kpis.investido)} foot="Entradas: cadastros + reposições" icon={<ArrowDownToLine size={18} />} cor="amber" delay={160} />
+                <Kpi label="Valor em estoque" value={brl(kpis.valorEstoque)} foot={`${int(produtos.length)} produtos • a preço de custo`} icon={<PiggyBank size={18} />} cor="blue" delay={200} />
+                <Kpi label="Estoque baixo" value={`${int(produtos.filter(p => p.estoque_atual < 10).length)}`} foot="Produtos com menos de 10 un." icon={<TriangleAlert size={18} />} cor="red" delay={240} />
+                <Kpi label="Equipe ativa" value={int(funcionarios.filter(f => f.status === 'ATIVO').length)} foot="Funcionários com acesso" icon={<Users size={18} />} cor="violet" delay={280} />
+              </div>
+
+              <RankingProdutos metricas={metricas} carregando={carregandoMetricas} />
             </div>
           )}
 
+          {/* ================= HISTÓRICO DE VENDAS ================= */}
           {activeTab === 'vendas' && (
             <div>
-               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h2 style={{ color: theme.textMain, margin: 0 }}>Histórico de Vendas</h2>
-                  
-                  {/* FILTRO DE PAGAMENTO IMPLEMENTADO */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <label style={{ fontWeight: 'bold', color: theme.textMain }}>Filtrar por Pagamento:</label>
-                    <select 
-                      value={filtroPagamento} 
-                      onChange={e => setFiltroPagamento(e.target.value)}
-                      style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '0.95rem', cursor: 'pointer' }}
-                    >
-                      <option value="TODOS">Todas as Vendas</option>
-                      <option value="PIX">Pix</option>
-                      <option value="DINHEIRO">Dinheiro</option>
-                      <option value="CARTAO_CREDITO">Cartão de Crédito</option>
-                      <option value="CARTAO_DEBITO">Cartão de Débito</option>
-                      <option value="POS">Maquininha (POS)</option>
-                    </select>
+              <div className="page-header">
+                <div>
+                  <h1 className="page-title">Histórico de Vendas</h1>
+                  <p className="page-sub">{int(vendasFiltradas.length)} venda(s) • {int(resumoVendas.itens)} unidade(s) • {brl(resumoVendas.total)}</p>
+                </div>
+                <Segmented id="vendas-periodo" value={periodoVendas} onChange={setPeriodoVendas} options={PERIODOS} />
+              </div>
+
+              <section className="table-wrap fade-up">
+                <div className="table-toolbar">
+                  <div className="search" style={{ flex: 1, maxWidth: 420 }}>
+                    <Search size={15} />
+                    <input id="vendas-busca" className="input" placeholder="Buscar por nº da venda, produto, EAN ou CPF..." value={buscaVenda} onChange={e => setBuscaVenda(e.target.value)} />
                   </div>
-               </div>
-               
-               <table style={{ width: '100%', backgroundColor: 'white', borderCollapse: 'collapse', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', borderRadius: '8px', overflow: 'hidden' }}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Nº Venda</th>
-                    <th style={styles.th}>Data/Hora</th>
-                    <th style={styles.th}>Método Pagamento</th>
-                    <th style={styles.th}>Qtd Itens</th>
-                    <th style={styles.th}>Valor Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vendasFiltradas.length === 0 ? (
-                    <tr><td colSpan={5} style={{...styles.td, textAlign: 'center', padding: '30px', color: theme.textMuted}}>Nenhuma venda encontrada com este filtro.</td></tr>
-                  ) : vendasFiltradas.map((v: any) => (
-                    <tr key={v.id} style={{ transition: 'background-color 0.2s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f9fafb'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
-                      <td style={{...styles.td, fontWeight: 'bold'}}>#{v.id.toString().padStart(6, '0')}</td>
-                      <td style={styles.td}>{new Date(v.criado_em).toLocaleString('pt-BR')}</td>
-                      <td style={styles.td}>
-                        <span style={{ padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: '#e5e7eb', color: '#374151' }}>
-                          {v.metodo_pagamento}
-                        </span>
-                      </td>
-                      <td style={styles.td}>{v.itens ? v.itens.length : 0} unid.</td>
-                      <td style={{...styles.td, fontWeight: 'bold', color: theme.accent}}>R$ {Number(v.total).toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  <select id="vendas-filtro-pagamento" className="input" style={{ width: 220 }} value={filtroPagamento} onChange={e => setFiltroPagamento(e.target.value)}>
+                    <option value="TODOS">Todas as formas de pagamento</option>
+                    <option value="PIX">Pix</option>
+                    <option value="DINHEIRO">Dinheiro</option>
+                    <option value="CARTAO_CREDITO">Cartão de Crédito</option>
+                    <option value="CARTAO_DEBITO">Cartão de Débito</option>
+                    <option value="POS">Maquininha (POS)</option>
+                    <option value="MÚLTIPLOS">Múltiplos</option>
+                  </select>
+                </div>
+                <div className="table-scroll">
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 36 }} />
+                        <th>Nº Venda</th>
+                        <th>Data/Hora</th>
+                        <th>Itens vendidos</th>
+                        <th className="center">Qtd</th>
+                        <th>Pagamento</th>
+                        <th>Cliente</th>
+                        <th className="right">Valor Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vendasFiltradas.length === 0 ? (
+                        <tr><td colSpan={8} className="empty">Nenhuma venda encontrada com estes filtros.</td></tr>
+                      ) : vendasFiltradas.map((v: any, idx: number) => {
+                        const itens: any[] = Array.isArray(v.itens) ? v.itens : [];
+                        const qtd = itens.reduce((a, it) => a + Number(it.quantidade), 0);
+                        const custo = itens.reduce((a, it) => a + Number(it.quantidade) * Number(it.custo || 0), 0);
+                        const aberta = vendaAberta === v.id;
+                        return (
+                          <React.Fragment key={v.id}>
+                            <tr className={`row clickable ${aberta ? 'expanded' : ''}`} style={{ animationDelay: `${Math.min(idx, 15) * 20}ms` }} onClick={() => setVendaAberta(aberta ? null : v.id)}>
+                              <td><ChevronRight size={16} className={`chev ${aberta ? 'open' : ''}`} /></td>
+                              <td className="strong num">#{String(v.id).padStart(6, '0')}</td>
+                              <td className="num">{dataHora(v.criado_em)}</td>
+                              <td>
+                                <div className="items-preview">
+                                  {itens.slice(0, 2).map((it, i) => <span key={i} className="line"><strong className="num" style={{ color: 'var(--text)' }}>{int(it.quantidade)}×</strong> {it.nome}</span>)}
+                                  {itens.length > 2 && <span className="more">+ {itens.length - 2} outro(s) item(ns)</span>}
+                                  {itens.length === 0 && <span className="muted">—</span>}
+                                </div>
+                              </td>
+                              <td className="center"><span className="badge gray num">{int(qtd)} un.</span></td>
+                              <td><Pagamentos metodo={v.metodo_pagamento} /></td>
+                              <td className="num">{v.cpf_cnpj_cliente || <span className="muted">Consumidor</span>}</td>
+                              <td className="right num" style={{ color: 'var(--accent)', fontWeight: 800 }}>{brl(v.total)}</td>
+                            </tr>
+                            {aberta && (
+                              <tr>
+                                <td colSpan={8} className="detail-cell">
+                                  <div className="detail-box">
+                                    <div className="detail-grid">
+                                      <table className="items-table">
+                                        <thead>
+                                          <tr><th>Produto</th><th>EAN</th><th className="right">Qtd</th><th className="right">Preço unit.</th><th className="right">Subtotal</th></tr>
+                                        </thead>
+                                        <tbody>
+                                          {itens.map((it, i) => (
+                                            <tr key={i}>
+                                              <td style={{ color: 'var(--text)', fontWeight: 600 }}>{it.nome}</td>
+                                              <td className="prod-ean">{it.ean}</td>
+                                              <td className="right num">{int(it.quantidade)}</td>
+                                              <td className="right num">{brl(it.preco)}</td>
+                                              <td className="right num" style={{ color: 'var(--text)', fontWeight: 600 }}>{brl(Number(it.quantidade) * Number(it.preco))}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                      <div className="summary-box">
+                                        <div className="summary-row"><span>Itens</span><span className="num">{int(qtd)} un.</span></div>
+                                        <div className="summary-row"><span>Custo da mercadoria</span><span className="num">{brl(custo)}</span></div>
+                                        <div className="summary-row"><span>Lucro estimado</span><span className="num" style={{ color: 'var(--accent)', fontWeight: 700 }}>{brl(Number(v.total) - custo)}</span></div>
+                                        <div className="summary-row"><span>CPF/CNPJ</span><span className="num">{v.cpf_cnpj_cliente || '—'}</span></div>
+                                        <div className="summary-row total"><span>Total pago</span><span className="num">{brl(v.total)}</span></div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </div>
           )}
 
+          {/* ================= PRODUTOS ================= */}
           {activeTab === 'produtos' && (
             <div>
-               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h2 style={{ color: theme.textMain, margin: 0 }}>Gerenciamento de Produtos</h2>
-                  <button onClick={() => setModalProduto({ open: true, data: null })} style={styles.btnPrimary}>+ Novo Produto</button>
-               </div>
-               <table style={{ width: '100%', backgroundColor: 'white', borderCollapse: 'collapse', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', borderRadius: '8px', overflow: 'hidden' }}>
-                <thead>
-                  <tr><th style={styles.th}>EAN</th><th style={styles.th}>Nome do Produto</th><th style={styles.th}>Preço Venda</th><th style={styles.th}>Estoque</th><th style={styles.th}>Ações</th></tr>
-                </thead>
-                <tbody>
-                  {produtos.map((p: any) => (
-                    <tr key={p.id}>
-                      <td style={styles.td}>{p.ean}</td><td style={styles.td}>{p.nome}</td>
-                      <td style={{...styles.td, fontWeight: 'bold'}}>R$ {Number(p.preco_venda).toFixed(2)}</td>
-                      <td style={styles.td}>
-                        <span style={{ color: p.estoque_atual >= 10 ? theme.accent : theme.danger, fontWeight: 'bold' }}>
-                          {p.estoque_atual} un
-                        </span>
-                      </td>
-                      <td style={styles.td}><button onClick={() => setModalProduto({ open: true, data: p })} style={styles.btnSecondary}>Editar</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="page-header">
+                <div>
+                  <h1 className="page-title">Produtos e Estoque</h1>
+                  <p className="page-sub">Todo cadastro e aumento de estoque é registrado como entrada de mercadoria</p>
+                </div>
+                <button id="btn-novo-produto" onClick={() => setModalProduto({ open: true, data: null })} className="btn btn-primary">+ Novo Produto</button>
+              </div>
+              <section className="table-wrap fade-up">
+                <div className="table-scroll">
+                  <table className="tbl">
+                    <thead>
+                      <tr><th>EAN</th><th>Nome do Produto</th><th className="right">Custo</th><th className="right">Venda</th><th className="right">Margem</th><th className="right">Estoque</th><th className="right">Ações</th></tr>
+                    </thead>
+                    <tbody>
+                      {produtos.map((p: any, i: number) => {
+                        const venda = Number(p.preco_venda), custo = Number(p.preco_custo || 0);
+                        const margem = venda > 0 ? ((venda - custo) / venda) * 100 : 0;
+                        return (
+                          <tr key={p.id} className="row" style={{ animationDelay: `${Math.min(i, 15) * 20}ms` }}>
+                            <td className="prod-ean">{p.ean}</td>
+                            <td className="strong">{p.nome}</td>
+                            <td className="right num">{brl(custo)}</td>
+                            <td className="right num strong">{brl(venda)}</td>
+                            <td className="right"><span className={`badge ${custo === 0 ? 'gray' : margem >= 30 ? 'green' : margem >= 10 ? 'amber' : 'red'}`}>{custo === 0 ? 'sem custo' : pct(margem)}</span></td>
+                            <td className="right"><span className={`badge ${p.estoque_atual >= 10 ? 'green' : 'red'}`}>{int(p.estoque_atual)} un.</span></td>
+                            <td className="right"><button onClick={() => setModalProduto({ open: true, data: p })} className="btn btn-ghost btn-sm">Editar</button></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </div>
           )}
 
+          {/* ================= ENTRADAS / MOVIMENTAÇÕES ================= */}
+          {activeTab === 'movimentacoes' && (
+            <div>
+              <div className="page-header">
+                <div>
+                  <h1 className="page-title">Entradas de Estoque</h1>
+                  <p className="page-sub">Registro de tudo que entrou (cadastros e reposições) e saiu (vendas e ajustes)</p>
+                </div>
+                <Segmented id="mov-filtro" value={filtroMov} onChange={setFiltroMov} options={[{ id: 'TODOS', label: 'Tudo' }, { id: 'ENTRADAS', label: 'Entradas' }, { id: 'SAIDAS', label: 'Saídas' }]} />
+              </div>
+              <div className="kpi-grid">
+                <Kpi hero label="Total investido" value={brl(resumoMov.investido)} foot="Soma de todas as entradas a preço de custo" icon={<ArrowDownToLine size={18} />} />
+                <Kpi label="Unidades que entraram" value={int(resumoMov.unidades)} foot={`${int(resumoMov.reposicoes)} cadastro(s)/reposição(ões)`} icon={<Boxes size={18} />} cor="blue" delay={40} />
+                <Kpi label="Perdas / ajustes" value={brl(resumoMov.perdas)} foot="Reduções manuais de estoque" icon={<ArrowUpFromLine size={18} />} cor="red" delay={80} />
+              </div>
+              <section className="table-wrap fade-up">
+                <div className="table-scroll">
+                  <table className="tbl">
+                    <thead>
+                      <tr><th>Data/Hora</th><th>Tipo</th><th>Produto</th><th className="right">Quantidade</th><th className="right">Custo unit.</th><th className="right">Valor total</th><th>Venda</th></tr>
+                    </thead>
+                    <tbody>
+                      {movFiltradas.length === 0 ? (
+                        <tr><td colSpan={7} className="empty">Nenhuma movimentação registrada ainda.</td></tr>
+                      ) : movFiltradas.map((m: any, i: number) => {
+                        const info = MOV_INFO[m.tipo] || { label: m.tipo, cor: 'gray', entrada: true };
+                        return (
+                          <tr key={m.id} className="row" style={{ animationDelay: `${Math.min(i, 15) * 20}ms` }}>
+                            <td className="num">{dataHora(m.criado_em)}</td>
+                            <td><span className={`badge ${info.cor}`}>{info.entrada ? <ArrowDownToLine size={12} /> : <ArrowUpFromLine size={12} />} {info.label}</span></td>
+                            <td><div className="prod-cell"><span className="prod-name">{m.produto_nome || '—'}</span><span className="prod-ean">{m.produto_ean}</span></div></td>
+                            <td className="right num" style={{ color: info.entrada ? 'var(--accent)' : 'var(--danger)', fontWeight: 700 }}>{info.entrada ? '+' : '−'}{int(m.quantidade)}</td>
+                            <td className="right num">{brl(m.custo_unitario)}</td>
+                            <td className="right num strong">{brl(m.valor_total)}</td>
+                            <td className="num">{m.venda_id ? `#${String(m.venda_id).padStart(6, '0')}` : <span className="muted">—</span>}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {/* ================= FUNCIONÁRIOS ================= */}
           {activeTab === 'funcionarios' && (
             <div>
-               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h2 style={{ color: theme.textMain, margin: 0 }}>Quadro de Funcionários e RH</h2>
-                  <button onClick={() => setModalFuncionario({ open: true, data: null })} style={styles.btnPrimary}>+ Novo Funcionário</button>
-               </div>
-               <table style={{ width: '100%', backgroundColor: 'white', borderCollapse: 'collapse', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', borderRadius: '8px', overflow: 'hidden' }}>
-                <thead>
-                  <tr><th style={styles.th}>Matrícula</th><th style={styles.th}>Nome Completo</th><th style={styles.th}>Nível de Acesso</th><th style={styles.th}>Status</th></tr>
-                </thead>
-                <tbody>
-                  {funcionarios.map((f: any) => (
-                    <tr key={f.id}>
-                      <td style={{...styles.td, fontWeight: 'bold'}}>{f.matricula}</td><td style={styles.td}>{f.nome}</td>
-                      <td style={styles.td}>{f.nivel_acesso}</td>
-                      <td style={styles.td}>
-                        <span style={{ padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: f.status === 'ATIVO' ? '#d1fae5' : '#fee2e2', color: f.status === 'ATIVO' ? '#065f46' : '#991b1b' }}>
-                          {f.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="page-header">
+                <div>
+                  <h1 className="page-title">Equipe e Funcionários</h1>
+                  <p className="page-sub">Controle de acesso ao PDV e à retaguarda</p>
+                </div>
+                <button id="btn-novo-funcionario" onClick={() => setModalFuncionario({ open: true, data: null })} className="btn btn-primary">+ Novo Funcionário</button>
+              </div>
+              <section className="table-wrap fade-up">
+                <div className="table-scroll">
+                  <table className="tbl">
+                    <thead>
+                      <tr><th>Matrícula</th><th>Nome Completo</th><th>Nível de Acesso</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                      {funcionarios.map((f: any, i: number) => (
+                        <tr key={f.id} className="row" style={{ animationDelay: `${Math.min(i, 15) * 20}ms` }}>
+                          <td className="strong num">{f.matricula}</td>
+                          <td className="strong">{f.nome}</td>
+                          <td><span className={`badge ${f.nivel_acesso === 'ADMIN' ? 'violet' : 'blue'}`}>{f.nivel_acesso === 'ADMIN' ? 'Administrador' : 'Caixa'}</span></td>
+                          <td><span className={`badge ${f.status === 'ATIVO' ? 'green' : 'red'}`}>{f.status}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </div>
           )}
 

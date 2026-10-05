@@ -81,7 +81,26 @@ CREATE TABLE IF NOT EXISTS vendas_itens (
     venda_id INTEGER REFERENCES vendas(id),
     produto_ean VARCHAR(14) NOT NULL,
     quantidade INTEGER NOT NULL,
-    preco_unitario NUMERIC(10, 2) NOT NULL
+    preco_unitario NUMERIC(10, 2) NOT NULL,
+    produto_nome VARCHAR(100),      -- snapshot do nome no momento da venda
+    preco_custo NUMERIC(10, 2)      -- snapshot do custo no momento da venda (para cálculo de lucro)
+);
+
+-- 3.1 Livro de movimentações de estoque (entradas e saídas)
+-- Obs: o servidor (server.js -> garantirSchema) cria/atualiza isso automaticamente ao iniciar.
+-- tipo: SALDO_INICIAL | ENTRADA_CADASTRO | ENTRADA_REPOSICAO | VENDA | AJUSTE_SAIDA
+CREATE TABLE IF NOT EXISTS movimentacoes_estoque (
+    id SERIAL PRIMARY KEY,
+    produto_id INTEGER,
+    produto_ean VARCHAR(14) NOT NULL,
+    produto_nome VARCHAR(100),
+    tipo VARCHAR(30) NOT NULL,
+    quantidade INTEGER NOT NULL,
+    custo_unitario NUMERIC(10, 2) DEFAULT 0,
+    valor_total NUMERIC(12, 2) DEFAULT 0,
+    venda_id INTEGER,
+    usuario_id INTEGER,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 4. Criação da tabela de Logs Fiscais
