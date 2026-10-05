@@ -253,12 +253,16 @@ fastify.post('/admin/funcionarios', async (request, reply) => {
 // Editar Funcionário
 fastify.put('/admin/funcionarios/:id', async (request, reply) => {
   const { id } = request.params
-  const { matricula, nome, cpf, endereco, data_nascimento, desconto_funcionario, nivel_acesso, status } = request.body
+  const { matricula, nome, cpf, endereco, data_nascimento, desconto_funcionario, nivel_acesso, status, senha } = request.body
   try {
     await pool.query(
       'UPDATE funcionarios SET matricula=$1, nome=$2, cpf=$3, endereco=$4, data_nascimento=$5, desconto_funcionario=$6, nivel_acesso=$7, status=$8 WHERE id=$9',
-      [matricula, nome, cpf, endereco, data_nascimento || null, desconto_funcionario, nivel_acesso, status, id]
+      [matricula, nome, cpf, endereco || '', data_nascimento || null, desconto_funcionario || 0, nivel_acesso, status, id]
     )
+    if (senha && String(senha).trim()) {
+      const hashSenha = bcrypt.hashSync(String(senha).trim(), 10)
+      await pool.query('UPDATE funcionarios SET senha=$1 WHERE id=$2', [hashSenha, id])
+    }
     return { sucesso: true }
   } catch(e) { return reply.status(500).send({error: 'Erro ao editar funcionário'}) }
 })

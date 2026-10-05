@@ -8,8 +8,7 @@ import {
 const DEFAULT_API = 'https://api-tailandia.onrender.com';
 
 export function getApiUrl(): string {
-  // Força o uso da API na nuvem ignorando variáveis do Vercel que podem estar velhas
-  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+  if (typeof window !== 'undefined' && localStorage.getItem('backoffice_useLocalhost') === 'true') {
     return 'http://localhost:3000';
   }
   return DEFAULT_API;
@@ -203,24 +202,40 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
 }
 
 function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
-  // Matrícula aleatória de 5 dígitos (ex: 10000 até 99999)
+  // Matrícula: mantém a do funcionário ou gera uma aleatória de 5 dígitos para novos
   const [matricula] = useState(funcionario?.matricula || String(Math.floor(10000 + Math.random() * 90000)));
   const [nome, setNome] = useState(funcionario?.nome || '');
   const [cpf, setCpf] = useState(funcionario?.cpf || '');
   const [senha, setSenha] = useState('');
   const [nivel, setNivel] = useState(funcionario?.nivel_acesso || 'CAIXA');
+  const [status, setStatus] = useState(funcionario?.status || 'ATIVO');
   const [salvando, setSalvando] = useState(false);
 
   const handleSave = async () => {
-    if (!nome || !cpf || (!funcionario && !senha)) return alert('Preencha Nome, CPF e Senha!');
+    if (!nome.trim() || !cpf.trim() || (!funcionario && !senha.trim())) {
+      return alert('Preencha Nome, CPF e Senha de Acesso!');
+    }
     const token = localStorage.getItem('adm_token');
     const api = getApiUrl();
     setSalvando(true);
     try {
+      const payload: any = {
+        matricula,
+        nome: nome.trim(),
+        cpf: cpf.trim(),
+        nivel_acesso: nivel,
+        status,
+        endereco: funcionario?.endereco || '',
+        data_nascimento: funcionario?.data_nascimento || null,
+        desconto_funcionario: funcionario?.desconto_funcionario || 0,
+      };
+      if (senha && senha.trim()) {
+        payload.senha = senha.trim();
+      }
       const res = await fetch(funcionario ? `${api}/admin/funcionarios/${funcionario.id}` : `${api}/admin/funcionarios`, {
         method: funcionario ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ matricula, nome, cpf, senha, nivel_acesso: nivel, status: 'ATIVO' })
+        body: JSON.stringify(payload)
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -238,21 +253,165 @@ function ModalFuncionario({ funcionario, onClose, onSaved }: any) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h3>{funcionario ? 'Editar Funcionário' : 'Novo Funcionário'}</h3>
-        <div className="field"><label className="label">Matrícula (Gerada Auto)</label><input className="input" value={matricula} readOnly /></div>
-        <div className="field"><label className="label">Nome Completo</label><input id="func-nome" className="input" value={nome} onChange={e => setNome(e.target.value)} /></div>
-        <div className="field"><label className="label">CPF</label><input id="func-cpf" className="input" value={cpf} onChange={e => setCpf(e.target.value)} placeholder="000.000.000-00" /></div>
-        {!funcionario && <div className="field"><label className="label">Senha de Acesso</label><input id="func-senha" className="input" type="password" value={senha} onChange={e => setSenha(e.target.value)} /></div>}
+        <h3>{funcionario ? `Editar Funcionário: ${funcionario.nome}` : 'Novo Funcionário'}</h3>
         <div className="field">
-          <label className="label">Nível de Acesso</label>
-          <select id="func-nivel" className="input" value={nivel} onChange={e => setNivel(e.target.value)}>
-            <option value="CAIXA">Caixa (PDV)</option>
-            <option value="ADMIN">Administrador (Retaguarda)</option>
-          </select>
+          <label className="label">Matrícula (Código de Acesso)</label>
+          <input className="input" value={matricula} readOnly style={{ background: 'var(--bg-surface-2)', opacity: 0.85 }} />
+        </div>
+        <div className="field">
+          <label className="label">Nome Completo</label>
+          <input id="func-nome" className="input" value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: João Silva" />
+        </div>
+        <div className="field">
+          <label className="label">CPF</label>
+          <input id="func-cpf" className="input" value={cpf} onChange={e => setCpf(e.target.value)} placeholder="000.000.000-00" />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="field">
+            <label className="label">Nível de Acesso</label>
+            <select id="func-nivel" className="input" value={nivel} onChange={e => setNivel(e.target.value)}>
+              <option value="CAIXA">Caixa (PDV)</option>
+              <option value="ADMIN">Administrador (Retaguarda)</option>
+            </select>
+          </div>
+          <div className="field">
+            <label className="label">Status</label>
+            <select id="func-status" className="input" value={status} onChange={e => setStatus(e.target.value)}>
+              <option value="ATIVO">Ativo</option>
+              <option value="INATIVO">Inativo</option>
+            </select>
+          </div>
+        </div>
+        <div className="field">
+          <label className="label">{funcionario ? 'Alterar Senha de Acesso (opcional)' : 'Senha de Acesso (obrigatória)'}</label>
+          <input
+            id="func-senha"
+            className="input"
+            type="password"
+            placeholder={funcionario ? 'Deixe em branco para manter a senha atual' : 'Digite a senha do funcionário'}
+            value={senha}
+            onChange={e => setSenha(e.target.value)}
+          />
         </div>
         <div className="modal-actions">
           <button onClick={onClose} disabled={salvando} className="btn btn-ghost">Cancelar</button>
-          <button id="func-salvar" onClick={handleSave} disabled={salvando} className="btn btn-primary">{salvando ? 'Salvando...' : 'Salvar Funcionário'}</button>
+          <button id="func-salvar" onClick={handleSave} disabled={salvando} className="btn btn-primary">
+            {salvando ? 'Salvando...' : 'Salvar Funcionário'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalEntradaEstoque({ produtos, onClose, onSaved }: { produtos: any[]; onClose: () => void; onSaved: () => void }) {
+  const [selectedEan, setSelectedEan] = useState(produtos[0]?.ean || '');
+  const prod = produtos.find(p => String(p.ean) === String(selectedEan)) || produtos[0];
+  const [qtd, setQtd] = useState('');
+  const [custo, setCusto] = useState(toInputNum(prod?.preco_custo));
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    if (prod) {
+      setCusto(toInputNum(prod.preco_custo));
+    }
+  }, [selectedEan, prod]);
+
+  const qtdN = parseInt(qtd, 10);
+  const custoN = parseNum(custo) || 0;
+  const totalEntrada = (Number.isFinite(qtdN) && qtdN > 0) ? qtdN * custoN : 0;
+  const novoEstoque = prod ? Number(prod.estoque_atual || 0) + (Number.isFinite(qtdN) && qtdN > 0 ? qtdN : 0) : 0;
+
+  const handleSave = async () => {
+    if (!prod || !Number.isFinite(qtdN) || qtdN <= 0) {
+      return alert('Informe uma quantidade válida de entrada (maior que 0).');
+    }
+    const token = localStorage.getItem('adm_token');
+    const api = getApiUrl();
+    setSalvando(true);
+    try {
+      // Atualiza o estoque do produto (soma a nova quantidade)
+      const res = await fetch(`${api}/admin/produtos/${prod.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          ean: prod.ean,
+          nome: prod.nome,
+          preco_custo: custoN,
+          preco_venda: prod.preco_venda,
+          estoque_atual: novoEstoque
+        })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Erro ao registrar entrada de estoque.');
+      }
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>+ Nova Entrada / Reposição de Estoque</h3>
+        <p className="muted" style={{ fontSize: '0.85rem', marginTop: -6, marginBottom: 16 }}>
+          Adicione novas unidades recebidas do fornecedor ao estoque. O valor entra automaticamente nas métricas de investimento.
+        </p>
+
+        <div className="field">
+          <label className="label">Produto</label>
+          <select className="input" value={selectedEan} onChange={e => setSelectedEan(e.target.value)}>
+            {produtos.map(p => (
+              <option key={p.id} value={p.ean}>
+                {p.nome} (Atual: {p.estoque_atual} un. • EAN: {p.ean})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="field">
+            <label className="label">Quantidade que Entrou</label>
+            <input
+              id="entrada-qtd"
+              className="input"
+              type="number"
+              min="1"
+              placeholder="Ex: 50"
+              value={qtd}
+              onChange={e => setQtd(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label className="label">Preço de Custo Unit. (R$)</label>
+            <input
+              id="entrada-custo"
+              className="input"
+              inputMode="decimal"
+              placeholder="0,00"
+              value={custo}
+              onChange={e => setCusto(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {prod && (
+          <div className="hint green" style={{ marginTop: 4, marginBottom: 12 }}>
+            Estoque atual: <strong>{int(prod.estoque_atual)} un.</strong> → Novo estoque: <strong>{int(novoEstoque)} un.</strong>
+            {totalEntrada > 0 && <span> • Investimento nesta entrada: <strong>{brl(totalEntrada)}</strong></span>}
+          </div>
+        )}
+
+        <div className="modal-actions">
+          <button onClick={onClose} disabled={salvando} className="btn btn-ghost">Cancelar</button>
+          <button id="entrada-salvar" onClick={handleSave} disabled={salvando} className="btn btn-primary">
+            {salvando ? 'Salvando...' : 'Confirmar Entrada'}
+          </button>
         </div>
       </div>
     </div>
@@ -435,6 +594,7 @@ export default function App() {
 
   const [modalProduto, setModalProduto] = useState<any>({ open: false, data: null });
   const [modalFuncionario, setModalFuncionario] = useState<any>({ open: false, data: null });
+  const [modalEntrada, setModalEntrada] = useState(false);
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('adm_operatorName');
@@ -470,8 +630,8 @@ export default function App() {
     const api = getApiUrl();
     try {
       const [dM, dMov] = await Promise.all([
-        fetch(`${api}/admin/metricas/produtos${periodo ? `?dias=${periodo}` : ''}`, { headers }).then(r => r.json()),
-        fetch(`${api}/admin/movimentacoes`, { headers }).then(r => r.json()),
+        fetch(`${api}/admin/metricas/produtos${periodo ? `?dias=${periodo}` : ''}`, { headers }).then(r => r.json()).catch(() => null),
+        fetch(`${api}/admin/movimentacoes`, { headers }).then(r => r.json()).catch(() => null),
       ]);
       if (Array.isArray(dM)) setMetricas(dM);
       if (Array.isArray(dMov)) setMovimentacoes(dMov);
@@ -504,19 +664,170 @@ export default function App() {
 
   // ---------- Derivados ----------
   const vendasPeriodo = useMemo(() => vendas.filter(v => dentroDoPeriodo(v.criado_em, periodo)), [vendas, periodo]);
+
+  // Mapa de produtos por EAN para acesso rápido
+  const prodPorEan = useMemo(() => {
+    const map = new Map<string, any>();
+    produtos.forEach(p => map.set(String(p.ean), p));
+    return map;
+  }, [produtos]);
+
+  // Métricas de produtos: usa as da API se vierem do backend, ou computa de forma redundante das vendas e produtos
+  const metricasComputadas = useMemo(() => {
+    if (Array.isArray(metricas) && metricas.length > 0 && metricas.some(m => Number(m.qtd_vendida) > 0 || Number(m.valor_investido) > 0)) {
+      return metricas;
+    }
+
+    const stats: Record<string, any> = {};
+
+    // 1. Processa todas as vendas do período
+    vendasPeriodo.forEach(v => {
+      (v.itens || []).forEach((it: any) => {
+        const ean = String(it.ean || '');
+        if (!ean) return;
+        const qtd = Number(it.quantidade) || 0;
+        const preco = Number(it.preco ?? it.preco_unitario ?? 0);
+        const p = prodPorEan.get(ean);
+        const custo = Number(p?.preco_custo ?? it.custo ?? 0);
+
+        if (!stats[ean]) {
+          stats[ean] = {
+            ean,
+            nome: it.nome || p?.nome || `Produto ${ean}`,
+            qtd_vendida: 0,
+            receita: 0,
+            custo_vendido: 0,
+            lucro: 0,
+            num_vendas: 0,
+            ultima_venda: v.criado_em,
+            estoque_atual: p?.estoque_atual,
+            preco_custo: custo,
+            preco_venda: p?.preco_venda || preco,
+            qtd_entrada: 0,
+            valor_investido: 0,
+          };
+        }
+        stats[ean].qtd_vendida += qtd;
+        stats[ean].receita += qtd * preco;
+        stats[ean].custo_vendido += qtd * custo;
+        stats[ean].lucro = stats[ean].receita - stats[ean].custo_vendido;
+        stats[ean].num_vendas += 1;
+        if (!stats[ean].ultima_venda || new Date(v.criado_em) > new Date(stats[ean].ultima_venda)) {
+          stats[ean].ultima_venda = v.criado_em;
+        }
+      });
+    });
+
+    // 2. Inclui todos os produtos do catálogo (para escopo 'todos' e cálculo de investimento)
+    produtos.forEach(p => {
+      const ean = String(p.ean);
+      const custo = Number(p.preco_custo || 0);
+      const estoque = Number(p.estoque_atual || 0);
+      const vendidas = stats[ean]?.qtd_vendida || 0;
+      const totalEntradas = Math.max(0, estoque) + vendidas;
+      const investido = totalEntradas * custo;
+
+      if (!stats[ean]) {
+        stats[ean] = {
+          ean,
+          nome: p.nome,
+          qtd_vendida: 0,
+          receita: 0,
+          custo_vendido: 0,
+          lucro: 0,
+          num_vendas: 0,
+          ultima_venda: null,
+          estoque_atual: p.estoque_atual,
+          preco_custo: custo,
+          preco_venda: p.preco_venda,
+          qtd_entrada: totalEntradas,
+          valor_investido: investido,
+        };
+      } else {
+        stats[ean].qtd_entrada = totalEntradas;
+        stats[ean].valor_investido = investido;
+        stats[ean].estoque_atual = p.estoque_atual;
+        stats[ean].nome = p.nome || stats[ean].nome;
+      }
+    });
+
+    return Object.values(stats);
+  }, [metricas, produtos, vendasPeriodo, prodPorEan]);
+
+  // Movimentações de estoque (Livro-Razão Kardex)
+  const movimentacoesComputadas = useMemo(() => {
+    if (Array.isArray(movimentacoes) && movimentacoes.length > 0) {
+      return movimentacoes;
+    }
+    const lista: any[] = [];
+
+    // Entradas a partir do cadastro/saldo dos produtos
+    produtos.forEach((p, idx) => {
+      const custo = Number(p.preco_custo || 0);
+      const est = Number(p.estoque_atual || 0);
+      const vendidas = vendas.reduce((tot, v) => {
+        return tot + (v.itens || []).filter((it: any) => String(it.ean) === String(p.ean)).reduce((s: number, it: any) => s + Number(it.quantidade || 0), 0);
+      }, 0);
+      const totalEntrado = est + vendidas;
+      if (totalEntrado > 0) {
+        lista.push({
+          id: `prod-${p.id || idx}`,
+          produto_id: p.id,
+          produto_ean: p.ean,
+          produto_nome: p.nome,
+          tipo: 'ENTRADA_CADASTRO',
+          quantidade: totalEntrado,
+          custo_unitario: custo,
+          valor_total: totalEntrado * custo,
+          venda_id: null,
+          criado_em: p.criado_em || new Date().toISOString(),
+        });
+      }
+    });
+
+    // Saídas a partir de cada venda realizada
+    vendas.forEach(v => {
+      (v.itens || []).forEach((it: any, i: number) => {
+        const p = prodPorEan.get(String(it.ean));
+        const custo = Number(p?.preco_custo || 0);
+        const qtd = Number(it.quantidade || 0);
+        lista.push({
+          id: `venda-${v.id}-${i}`,
+          produto_id: p?.id || null,
+          produto_ean: it.ean,
+          produto_nome: it.nome || p?.nome || `Produto ${it.ean}`,
+          tipo: 'VENDA',
+          quantidade: qtd,
+          custo_unitario: custo,
+          valor_total: qtd * (custo || Number(it.preco || 0)),
+          venda_id: v.id,
+          criado_em: v.criado_em,
+        });
+      });
+    });
+
+    return lista.sort((a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime());
+  }, [movimentacoes, produtos, vendas, prodPorEan]);
+
   const kpis = useMemo(() => {
-    const receita = metricas.reduce((a, m) => a + Number(m.receita), 0);
-    const custo = metricas.reduce((a, m) => a + Number(m.custo_vendido), 0);
-    const unidades = metricas.reduce((a, m) => a + Number(m.qtd_vendida), 0);
-    const investido = metricas.reduce((a, m) => a + Number(m.valor_investido), 0);
     const faturamentoVendas = vendasPeriodo.reduce((a, v) => a + Number(v.total), 0);
+    const receita = metricasComputadas.reduce((a, m) => a + Number(m.receita), 0) || faturamentoVendas;
+    const custo = metricasComputadas.reduce((a, m) => a + Number(m.custo_vendido), 0);
+    const unidades = metricasComputadas.reduce((a, m) => a + Number(m.qtd_vendida), 0);
+    const investido = metricasComputadas.reduce((a, m) => a + Number(m.valor_investido), 0);
     const valorEstoque = produtos.reduce((a, p) => a + Math.max(0, Number(p.estoque_atual)) * Number(p.preco_custo || 0), 0);
+    const lucro = receita - custo;
     return {
-      receita: faturamentoVendas || receita, lucro: receita - custo, margem: receita > 0 ? ((receita - custo) / receita) * 100 : 0,
-      unidades, investido, valorEstoque, numVendas: vendasPeriodo.length,
+      receita,
+      lucro,
+      margem: receita > 0 ? (lucro / receita) * 100 : 0,
+      unidades,
+      investido,
+      valorEstoque,
+      numVendas: vendasPeriodo.length,
       ticket: vendasPeriodo.length ? faturamentoVendas / vendasPeriodo.length : 0,
     };
-  }, [metricas, vendasPeriodo, produtos]);
+  }, [metricasComputadas, vendasPeriodo, produtos]);
 
   const vendasFiltradas = useMemo(() => {
     const termo = buscaVenda.trim().toLowerCase();
@@ -535,16 +846,23 @@ export default function App() {
     itens: vendasFiltradas.reduce((a, v) => a + (v.itens || []).reduce((s: number, it: any) => s + Number(it.quantidade), 0), 0),
   }), [vendasFiltradas]);
 
-  const movFiltradas = useMemo(() => movimentacoes.filter(m => filtroMov === 'TODOS' || (filtroMov === 'ENTRADAS' ? MOV_INFO[m.tipo]?.entrada : !MOV_INFO[m.tipo]?.entrada)), [movimentacoes, filtroMov]);
+  const movFiltradas = useMemo(() => {
+    return movimentacoesComputadas.filter(m => {
+      if (filtroMov === 'TODOS') return true;
+      const isEntrada = MOV_INFO[m.tipo]?.entrada;
+      return filtroMov === 'ENTRADAS' ? isEntrada : !isEntrada;
+    });
+  }, [movimentacoesComputadas, filtroMov]);
+
   const resumoMov = useMemo(() => {
-    const entradas = movimentacoes.filter(m => MOV_INFO[m.tipo]?.entrada);
+    const entradas = movimentacoesComputadas.filter(m => MOV_INFO[m.tipo]?.entrada);
     return {
-      investido: entradas.reduce((a, m) => a + Number(m.valor_total), 0),
-      unidades: entradas.reduce((a, m) => a + Number(m.quantidade), 0),
-      reposicoes: movimentacoes.filter(m => m.tipo === 'ENTRADA_REPOSICAO' || m.tipo === 'ENTRADA_CADASTRO').length,
-      perdas: movimentacoes.filter(m => m.tipo === 'AJUSTE_SAIDA').reduce((a, m) => a + Number(m.valor_total), 0),
+      investido: entradas.reduce((a, m) => a + Number(m.valor_total || 0), 0),
+      unidades: entradas.reduce((a, m) => a + Number(m.quantidade || 0), 0),
+      reposicoes: entradas.length,
+      perdas: movimentacoesComputadas.filter(m => m.tipo === 'AJUSTE_SAIDA').reduce((a, m) => a + Number(m.valor_total || 0), 0),
     };
-  }, [movimentacoes]);
+  }, [movimentacoesComputadas]);
 
   if (!adminName) return <LoginScreen onLogin={handleLogin} tema={tema} onToggleTema={alternar} />;
 
@@ -560,6 +878,7 @@ export default function App() {
     <div className="app-shell">
       {modalProduto.open && <ModalProduto produto={modalProduto.data} onClose={() => setModalProduto({ open: false, data: null })} onSaved={recarregarTudo} />}
       {modalFuncionario.open && <ModalFuncionario funcionario={modalFuncionario.data} onClose={() => setModalFuncionario({ open: false, data: null })} onSaved={carregarDados} />}
+      {modalEntrada && <ModalEntradaEstoque produtos={produtos} onClose={() => setModalEntrada(false)} onSaved={recarregarTudo} />}
 
       {/* MENU LATERAL */}
       <aside className="sidebar">
@@ -598,14 +917,14 @@ export default function App() {
                 <Kpi hero label="Faturamento" value={brl(kpis.receita)} foot={`${int(kpis.numVendas)} venda(s) no período`} icon={<TrendingUp size={18} />} />
                 <Kpi label="Lucro bruto" value={brl(kpis.lucro)} foot={`Margem média de ${pct(kpis.margem)}`} icon={<Wallet size={18} />} cor="green" delay={40} />
                 <Kpi label="Ticket médio" value={brl(kpis.ticket)} foot="Valor médio por venda" icon={<Ticket size={18} />} cor="blue" delay={80} />
-                <Kpi label="Unidades vendidas" value={int(kpis.unidades)} foot={`${int(metricas.filter(m => Number(m.qtd_vendida) > 0).length)} produto(s) diferentes`} icon={<ShoppingCart size={18} />} cor="violet" delay={120} />
+                <Kpi label="Unidades vendidas" value={int(kpis.unidades)} foot={`${int(metricasComputadas.filter(m => Number(m.qtd_vendida) > 0).length)} produto(s) diferentes`} icon={<ShoppingCart size={18} />} cor="violet" delay={120} />
                 <Kpi label="Investido em mercadoria" value={brl(kpis.investido)} foot="Entradas: cadastros + reposições" icon={<ArrowDownToLine size={18} />} cor="amber" delay={160} />
                 <Kpi label="Valor em estoque" value={brl(kpis.valorEstoque)} foot={`${int(produtos.length)} produtos • a preço de custo`} icon={<PiggyBank size={18} />} cor="blue" delay={200} />
                 <Kpi label="Estoque baixo" value={`${int(produtos.filter(p => p.estoque_atual < 10).length)}`} foot="Produtos com menos de 10 un." icon={<TriangleAlert size={18} />} cor="red" delay={240} />
                 <Kpi label="Equipe ativa" value={int(funcionarios.filter(f => f.status === 'ATIVO').length)} foot="Funcionários com acesso" icon={<Users size={18} />} cor="violet" delay={280} />
               </div>
 
-              <RankingProdutos metricas={metricas} carregando={carregandoMetricas} />
+              <RankingProdutos metricas={metricasComputadas} carregando={carregandoMetricas && metricasComputadas.length === 0} />
             </div>
           )}
 
@@ -766,7 +1085,12 @@ export default function App() {
                   <h1 className="page-title">Entradas de Estoque</h1>
                   <p className="page-sub">Registro de tudo que entrou (cadastros e reposições) e saiu (vendas e ajustes)</p>
                 </div>
-                <Segmented id="mov-filtro" value={filtroMov} onChange={setFiltroMov} options={[{ id: 'TODOS', label: 'Tudo' }, { id: 'ENTRADAS', label: 'Entradas' }, { id: 'SAIDAS', label: 'Saídas' }]} />
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Segmented id="mov-filtro" value={filtroMov} onChange={setFiltroMov} options={[{ id: 'TODOS', label: 'Tudo' }, { id: 'ENTRADAS', label: 'Entradas' }, { id: 'SAIDAS', label: 'Saídas' }]} />
+                  <button id="btn-nova-entrada" onClick={() => setModalEntrada(true)} className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Boxes size={16} /> + Nova Entrada de Estoque
+                  </button>
+                </div>
               </div>
               <div className="kpi-grid">
                 <Kpi hero label="Total investido" value={brl(resumoMov.investido)} foot="Soma de todas as entradas a preço de custo" icon={<ArrowDownToLine size={18} />} />
@@ -817,7 +1141,13 @@ export default function App() {
                 <div className="table-scroll">
                   <table className="tbl">
                     <thead>
-                      <tr><th>Matrícula</th><th>Nome Completo</th><th>Nível de Acesso</th><th>Status</th></tr>
+                      <tr>
+                        <th>Matrícula</th>
+                        <th>Nome Completo</th>
+                        <th>Nível de Acesso</th>
+                        <th>Status</th>
+                        <th className="right">Ações</th>
+                      </tr>
                     </thead>
                     <tbody>
                       {funcionarios.map((f: any, i: number) => (
@@ -826,6 +1156,15 @@ export default function App() {
                           <td className="strong">{f.nome}</td>
                           <td><span className={`badge ${f.nivel_acesso === 'ADMIN' ? 'violet' : 'blue'}`}>{f.nivel_acesso === 'ADMIN' ? 'Administrador' : 'Caixa'}</span></td>
                           <td><span className={`badge ${f.status === 'ATIVO' ? 'green' : 'red'}`}>{f.status}</span></td>
+                          <td className="right">
+                            <button
+                              id={`btn-editar-func-${f.id}`}
+                              onClick={() => setModalFuncionario({ open: true, data: f })}
+                              className="btn btn-ghost btn-sm"
+                            >
+                              Editar
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
