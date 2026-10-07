@@ -67,6 +67,33 @@ ipcMain.on('print-silent', (event) => {
   processPrintQueue();
 });
 
+// Sincronização compartilhada de status de vendas entre Backoffice e PDV
+const fs = require('fs');
+const syncFilePath = path.resolve(__dirname, '..', 'vendas_sync.json');
+
+ipcMain.handle('get-sync-overrides', () => {
+  try {
+    if (fs.existsSync(syncFilePath)) {
+      return JSON.parse(fs.readFileSync(syncFilePath, 'utf-8'));
+    }
+  } catch {}
+  return {};
+});
+
+ipcMain.handle('save-sync-override', (event, { vendaId, status, extraData }) => {
+  try {
+    let current = {};
+    if (fs.existsSync(syncFilePath)) {
+      try { current = JSON.parse(fs.readFileSync(syncFilePath, 'utf-8')); } catch {}
+    }
+    current[vendaId] = { status, ...(extraData || {}) };
+    fs.writeFileSync(syncFilePath, JSON.stringify(current, null, 2), 'utf-8');
+    return current;
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
 app.whenReady().then(() => {
   createWindow();
 

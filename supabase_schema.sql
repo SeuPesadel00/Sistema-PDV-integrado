@@ -4,11 +4,17 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- 1. Criação da tabela de Produtos
 CREATE TABLE IF NOT EXISTS produtos (
     id SERIAL PRIMARY KEY,
-    ean VARCHAR(14) UNIQUE NOT NULL,
-    nome VARCHAR(100) NOT NULL,
+    ean VARCHAR(50) UNIQUE NOT NULL,
+    nome VARCHAR(255) NOT NULL,
+    categoria VARCHAR(100),
+    subcategoria VARCHAR(100),
+    imagem_url TEXT,
+    descricao TEXT,
     preco_custo NUMERIC(10, 2) DEFAULT 0,
     preco_venda NUMERIC(10, 2) NOT NULL,
     estoque_atual INTEGER DEFAULT 0,
+    ativo BOOLEAN DEFAULT true,
+    wp_id INTEGER,
     ncm VARCHAR(8) DEFAULT '22030000',
     cfop VARCHAR(4) DEFAULT '5102',
     icms_cst VARCHAR(3) DEFAULT '102',
@@ -17,6 +23,8 @@ CREATE TABLE IF NOT EXISTS produtos (
     origem_mercadoria VARCHAR(1) DEFAULT '0',
     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_produtos_wp_id ON produtos(wp_id);
+CREATE INDEX IF NOT EXISTS idx_produtos_categoria ON produtos(categoria);
 
 -- Inserindo os produtos
 INSERT INTO produtos (ean, nome, preco_venda, estoque_atual) VALUES
@@ -82,10 +90,10 @@ CREATE TABLE IF NOT EXISTS vendas (
 CREATE TABLE IF NOT EXISTS vendas_itens (
     id SERIAL PRIMARY KEY,
     venda_id INTEGER REFERENCES vendas(id),
-    produto_ean VARCHAR(14) NOT NULL,
+    produto_ean VARCHAR(50) NOT NULL,
     quantidade INTEGER NOT NULL,
     preco_unitario NUMERIC(10, 2) NOT NULL,
-    produto_nome VARCHAR(100),      -- snapshot do nome no momento da venda
+    produto_nome VARCHAR(255),      -- snapshot do nome no momento da venda
     preco_custo NUMERIC(10, 2)      -- snapshot do custo no momento da venda (para cálculo de lucro)
 );
 
@@ -95,8 +103,8 @@ CREATE TABLE IF NOT EXISTS vendas_itens (
 CREATE TABLE IF NOT EXISTS movimentacoes_estoque (
     id SERIAL PRIMARY KEY,
     produto_id INTEGER,
-    produto_ean VARCHAR(14) NOT NULL,
-    produto_nome VARCHAR(100),
+    produto_ean VARCHAR(50) NOT NULL,
+    produto_nome VARCHAR(255),
     tipo VARCHAR(30) NOT NULL,
     quantidade INTEGER NOT NULL,
     custo_unitario NUMERIC(10, 2) DEFAULT 0,

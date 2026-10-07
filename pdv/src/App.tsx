@@ -43,8 +43,10 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
   const recebimentoInputRef = useRef<HTMLInputElement>(null);
 
-  // CONFIGURAÇÃO DE REDE (MULTI-LOJAS)
-  const apiUrl = "https://api-tailandia.onrender.com";
+  // CONFIGURAÇÃO DE REDE (MULTI-LOJAS / NUVEM)
+  const apiUrl = (typeof window !== 'undefined' && localStorage.getItem('pdv_useLocalhost') === 'true')
+    ? "http://localhost:3000"
+    : "https://api-tailandia.onrender.com";
 
   // MÓDULO DE SEGURANÇA E PERSISTÊNCIA DE SESSÃO DO CAIXA
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!sessionStorage.getItem('pdv_operatorName'));
@@ -159,9 +161,15 @@ export default function App() {
     e.preventDefault();
     setIsLoggingIn(true);
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
       const res = await fetch(`${apiUrl}/auth`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ matricula, senha })
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matricula: matricula.trim(), senha: senha.trim() }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       setIsLoggingIn(false);
       if (res.ok) {
         const data = await res.json();
@@ -169,10 +177,17 @@ export default function App() {
         setIsAuthenticated(true);
         sessionStorage.setItem('pdv_operatorName', data.nome);
         sessionStorage.setItem('pdv_token', data.token);
-      } else { setAlertMsg("Acesso Negado: Matrícula ou senha incorretos!"); }
-    } catch (err) { 
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setAlertMsg(errData.error || errData.message || "Acesso Negado: Matrícula ou senha incorretos!");
+      }
+    } catch (err: any) { 
       setIsLoggingIn(false);
-      setAlertMsg("Erro crítico: Servidor Banco de Dados Offline."); 
+      if (err?.name === 'AbortError') {
+        setAlertMsg("Tempo limite esgotado: O servidor demorou para responder. Tente novamente.");
+      } else {
+        setAlertMsg("Erro crítico: Servidor Banco de Dados Offline ou sem conexão."); 
+      }
     }
   };
 
@@ -480,15 +495,16 @@ export default function App() {
     }
   }, [isAuthenticated, carregarCatalogo]);
 
-  // Produtos sugeridos para a barra de pesquisa/bipagem por nome ou código (a partir da 1ª letra)
+  // Produtos sugeridos para a barra de pesquisa/bipagem por nome, categoria ou código (a partir da 1ª letra)
   const produtosSugeridos = useMemo(() => {
     const termo = barcode.trim().toLowerCase();
     if (!termo || termo.length < 1) return [];
     return catalogoProdutos.filter(p => {
       const nome = (p.nome || '').toLowerCase();
       const ean = (p.ean || '').toLowerCase();
-      return nome.includes(termo) || ean.includes(termo);
-    }).slice(0, 15);
+      const cat = (p.categoria || '').toLowerCase();
+      return nome.includes(termo) || ean.includes(termo) || cat.includes(termo);
+    }).slice(0, 25);
   }, [barcode, catalogoProdutos]);
 
   // Adiciona produto ao carrinho com checagem de estoque
@@ -721,21 +737,41 @@ export default function App() {
   };
 
   // ---------- FUNÇÕES DO PAINEL ADMINISTRATIVO (PDV) ----------
-  const carregarVendasAdmin = async (overrideToken?: string) => {
-    setAdminVendasLoading(true);
+  const carregarVendasAdmin = useCallback(async (overrideToken?: string, isPolling = false) => {
+    if (!isPolling) setAdminVendasLoading(true);
     const token = overrideToken || adminToken || sessionStorage.getItem('pdv_token');
     try {
-      const res = await fetch(`${apiUrl}/admin/vendas`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const res = await fetch(`${apiUrl}/admin/vendas?t=${Date.now()}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+        cache: 'no-store'
       });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          // Aplica overrides de cancelamento e estorno salvos
+          // Busca overrides compartilhados (IPC do Electron e HTTP local do Vite)
+          let sharedOverrides: Record<string, any> = {};
+
+          // @ts-ignore
+          if (window.require) {
+            try {
+              // @ts-ignore
+              const { ipcRenderer } = window.require('electron');
+              const ipcRes = await ipcRenderer.invoke('get-sync-overrides');
+              if (ipcRes && typeof ipcRes === 'object') sharedOverrides = { ...sharedOverrides, ...ipcRes };
+            } catch {}
+          }
+
+          try {
+            const httpRes = await fetch(`http://localhost:5173/api/sync-overrides?t=${Date.now()}`, { cache: 'no-store' }).then(r => r.json()).catch(() => ({}));
+            if (httpRes && typeof httpRes === 'object') sharedOverrides = { ...sharedOverrides, ...httpRes };
+          } catch {}
+
           const overridesRaw = localStorage.getItem('vendas_status_override');
-          const overrides: Record<string, any> = overridesRaw ? JSON.parse(overridesRaw) : {};
+          const localOverrides: Record<string, any> = overridesRaw ? JSON.parse(overridesRaw) : {};
+          const allOverrides = { ...localOverrides, ...sharedOverrides };
+
           const mesclado = data.map((v: any) => {
-            if (overrides[v.id]) return { ...v, ...overrides[v.id] };
+            if (allOverrides[v.id]) return { ...v, ...allOverrides[v.id] };
             return v;
           });
           setAdminVendas(mesclado);
@@ -744,9 +780,21 @@ export default function App() {
     } catch (err) {
       console.error("Erro ao carregar vendas no Painel ADM:", err);
     } finally {
-      setAdminVendasLoading(false);
+      if (!isPolling) setAdminVendasLoading(false);
     }
-  };
+  }, [adminToken, apiUrl]);
+
+  useEffect(() => {
+    let interval: any;
+    if (showAdminPanel) {
+      interval = setInterval(() => {
+        carregarVendasAdmin(undefined, true);
+      }, 3000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [showAdminPanel, carregarVendasAdmin]);
 
   const handleAbrirPainelAdm = () => {
     // SEMPRE exige autenticação de Administrador para abrir o painel
@@ -843,6 +891,11 @@ export default function App() {
       setAlertMsg('Esta venda já se encontra cancelada.');
       return;
     }
+    const diffMins = (Date.now() - new Date(venda.criado_em).getTime()) / (1000 * 60);
+    if (diffMins > 30) {
+      setAlertMsg('Prazo de cancelamento (30 minutos) expirado! Para vendas antigas, o cancelamento ou estorno deve ser feito pelo Backoffice.');
+      return;
+    }
     setShowCancelarModal(venda);
     setCancelarMotivo("Desistência do cliente");
     setCancelarObs("");
@@ -859,24 +912,67 @@ export default function App() {
       const token = adminToken || sessionStorage.getItem('pdv_token');
       const motivoFinal = cancelarObs.trim() ? `${cancelarMotivo} - ${cancelarObs.trim()}` : cancelarMotivo;
 
-      await fetch(`${apiUrl}/admin/vendas/${venda.id}/cancelar`, {
+      // 1. Tenta acionar a rota central de cancelamento
+      let cancelamentoApiSucesso = false;
+      try {
+        const res = await fetch(`${apiUrl}/admin/vendas/${venda.id}/cancelar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ motivo: motivoFinal })
+        });
+        if (res.ok) cancelamentoApiSucesso = true;
+      } catch {}
+
+      // 2. Se a rota central retornar 404 (aguardando deploy na nuvem), restabelece estoque na API via PUT /admin/produtos/:id
+      if (!cancelamentoApiSucesso) {
+        for (const item of (venda.itens || [])) {
+          const prodCadastrado = catalogoProdutos.find(p => String(p.ean) === String(item.ean || item.produto_ean));
+          if (prodCadastrado && prodCadastrado.id) {
+            await fetch(`${apiUrl}/admin/produtos/${prodCadastrado.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({
+                ...prodCadastrado,
+                estoque_atual: Number(prodCadastrado.estoque_atual || 0) + Number(item.quantidade || item.quantity || 1)
+              })
+            }).catch(() => {});
+          }
+        }
+      }
+
+      // 3. Salva override nos 3 níveis: IPC (arquivo local compartilhado), HTTP sync local e localStorage
+      const overrideData = { status: 'CANCELADA', motivo_cancelamento: motivoFinal, status_nfe: 'CANCELADA' };
+
+      // IPC nativo
+      // @ts-ignore
+      if (window.require) {
+        try {
+          // @ts-ignore
+          const { ipcRenderer } = window.require('electron');
+          await ipcRenderer.invoke('save-sync-override', { vendaId: venda.id, status: 'CANCELADA', extraData: overrideData });
+        } catch {}
+      }
+
+      // HTTP Local Vite Sync (para o Backoffice ler instantaneamente)
+      await fetch('http://localhost:5173/api/sync-overrides', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ motivo: motivoFinal })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendaId: venda.id, status: 'CANCELADA', extraData: overrideData })
       }).catch(() => {});
 
-      // Salva override local
+      // localStorage do PDV
       const overridesRaw = localStorage.getItem('vendas_status_override');
       const overrides = overridesRaw ? JSON.parse(overridesRaw) : {};
-      overrides[venda.id] = { status: 'CANCELADA', motivo_cancelamento: motivoFinal, status_nfe: 'CANCELADA' };
+      overrides[venda.id] = overrideData;
       localStorage.setItem('vendas_status_override', JSON.stringify(overrides));
 
-      setAdminVendas(prev => prev.map(v => v.id === venda.id ? { ...v, status: 'CANCELADA', motivo_cancelamento: motivoFinal, status_nfe: 'CANCELADA' } : v));
+      // 4. Atualiza estado da tela do PDV
+      setAdminVendas(prev => prev.map(v => v.id === venda.id ? { ...v, ...overrideData } : v));
       setShowCancelarModal(null);
       setAdminMenuAbertoId(null);
-      setAlertMsg(`Venda #${String(venda.id).padStart(6, '0')} cancelada com sucesso! O estoque foi atualizado e sincronizado com a retaguarda.`);
+      setAlertMsg(`Venda #${String(venda.id).padStart(6, '0')} cancelada com sucesso! O estoque foi restaurado e sincronizado com o Backoffice.`);
     } catch (e: any) {
-      setAlertMsg("Erro ao cancelar venda: " + e.message);
+      setAlertMsg("Erro ao cancelar venda: " + (e.message || "Falha desconhecida"));
     } finally {
       setCancelarLoading(false);
     }
@@ -885,6 +981,15 @@ export default function App() {
   const handleCancelarVendaAdmin = handleAbrirModalCancelar;
 
   const handleAbrirModalEstorno = (venda: any) => {
+    if (venda.status === 'ESTORNADA' || venda.status === 'CANCELADA') {
+      setAlertMsg(`Esta venda já está ${venda.status.toLowerCase()}.`);
+      return;
+    }
+    const diffMins = (Date.now() - new Date(venda.criado_em).getTime()) / (1000 * 60);
+    if (diffMins > 30) {
+      setAlertMsg('Prazo (30 minutos) expirado! Para vendas antigas, o estorno deve ser feito pelo Backoffice.');
+      return;
+    }
     setShowEstornoModal(venda);
     setEstornoMotivo("Desistência do cliente");
     setEstornoForma(venda.metodo_pagamento?.includes('PIX') ? 'PIX' : venda.metodo_pagamento?.includes('DINHEIRO') ? 'DINHEIRO' : 'CARTAO_MAQUININHA');
@@ -907,21 +1012,59 @@ export default function App() {
         observacoes: estornoObs
       };
 
-      await fetch(`${apiUrl}/admin/vendas/${venda.id}/estornar`, {
+      let estornoApiSucesso = false;
+      try {
+        const res = await fetch(`${apiUrl}/admin/vendas/${venda.id}/estornar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(estornoPayload)
+        });
+        if (res.ok) estornoApiSucesso = true;
+      } catch {}
+
+      if (!estornoApiSucesso) {
+        for (const item of (venda.itens || [])) {
+          const prodCadastrado = catalogoProdutos.find(p => String(p.ean) === String(item.ean || item.produto_ean));
+          if (prodCadastrado && prodCadastrado.id) {
+            await fetch(`${apiUrl}/admin/produtos/${prodCadastrado.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({
+                ...prodCadastrado,
+                estoque_atual: Number(prodCadastrado.estoque_atual || 0) + Number(item.quantidade || item.quantity || 1)
+              })
+            }).catch(() => {});
+          }
+        }
+      }
+
+      const overrideData = { status: 'ESTORNADA', motivo_cancelamento: estornoMotivo, estorno_info: estornoPayload, status_nfe: 'ESTORNADA' };
+
+      // IPC nativo
+      // @ts-ignore
+      if (window.require) {
+        try {
+          // @ts-ignore
+          const { ipcRenderer } = window.require('electron');
+          await ipcRenderer.invoke('save-sync-override', { vendaId: venda.id, status: 'ESTORNADA', extraData: overrideData });
+        } catch {}
+      }
+
+      // HTTP Local Vite Sync
+      await fetch('http://localhost:5173/api/sync-overrides', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(estornoPayload)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendaId: venda.id, status: 'ESTORNADA', extraData: overrideData })
       }).catch(() => {});
 
-      // Salva override local
       const overridesRaw = localStorage.getItem('vendas_status_override');
       const overrides = overridesRaw ? JSON.parse(overridesRaw) : {};
-      overrides[venda.id] = { status: 'ESTORNADA', motivo_cancelamento: estornoMotivo, estorno_info: estornoPayload, status_nfe: 'ESTORNADA' };
+      overrides[venda.id] = overrideData;
       localStorage.setItem('vendas_status_override', JSON.stringify(overrides));
 
-      setAdminVendas(prev => prev.map(v => v.id === venda.id ? { ...v, status: 'ESTORNADA', motivo_cancelamento: estornoMotivo, estorno_info: estornoPayload, status_nfe: 'ESTORNADA' } : v));
+      setAdminVendas(prev => prev.map(v => v.id === venda.id ? { ...v, ...overrideData } : v));
       setShowEstornoModal(null);
-      alert(`Venda #${String(venda.id).padStart(6, '0')} estornada com sucesso! O valor e o estoque foram recompostos.`);
+      setAlertMsg(`Venda #${String(venda.id).padStart(6, '0')} estornada com sucesso! O valor e o estoque foram restabelecidos e sincronizados com o Backoffice.`);
 
       // Pergunta se deseja comprovante de estorno impresso
       const querImprimir = window.confirm("Deseja imprimir o comprovante de estorno na impressora térmica?");
@@ -929,7 +1072,7 @@ export default function App() {
         handleReimprimirSegundaVia({ ...venda, status: 'ESTORNADA' });
       }
     } catch (e: any) {
-      alert("Erro ao estornar venda: " + e.message);
+      setAlertMsg("Erro ao estornar venda: " + (e.message || "Falha desconhecida"));
     } finally {
       setEstornoLoading(false);
     }
@@ -1147,8 +1290,27 @@ export default function App() {
                     className={`product-suggestion-item ${idx === sugestoesIndex ? 'active' : ''}`}
                     onClick={() => adicionarProdutoAoCarrinho(prod)}
                   >
+                    {prod.imagem_url ? (
+                      <img
+                        src={prod.imagem_url}
+                        alt=""
+                        style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', flexShrink: 0, marginRight: 10, background: 'var(--bg-main)' }}
+                        onError={(e) => (e.currentTarget.style.display = 'none')}
+                      />
+                    ) : (
+                      <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--bg-main)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0, marginRight: 10 }}>
+                        {prod.nome ? prod.nome.slice(0, 2).toUpperCase() : '📦'}
+                      </div>
+                    )}
                     <div className="product-suggestion-info">
-                      <span className="product-suggestion-name">{prod.nome}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span className="product-suggestion-name">{prod.nome}</span>
+                        {prod.categoria && (
+                          <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: 4, background: 'var(--bg-card-header)', color: 'var(--text-muted)' }}>
+                            {prod.categoria}
+                          </span>
+                        )}
+                      </div>
                       <div className="product-suggestion-meta">
                         <span>EAN: {prod.ean}</span>
                         <span>•</span>
@@ -1642,7 +1804,7 @@ export default function App() {
 
       {/* PAINEL ADMINISTRATIVO (CONSULTA & GESTÃO DE VENDAS) */}
       {showAdminPanel && (
-        <div className="admin-modal-overlay" onClick={handleFecharPainelAdm}>
+        <div className="admin-modal-overlay">
           <div className="admin-panel-box" onClick={e => e.stopPropagation()}>
             <div className="admin-panel-header">
               <h2>

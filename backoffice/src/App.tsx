@@ -185,6 +185,9 @@ function LoginScreen({ onLogin, tema, onToggleTema }: { onLogin: (nome: string) 
 function ModalProduto({ produto, onClose, onSaved }: any) {
   const [ean, setEan] = useState(produto?.ean || '');
   const [nome, setNome] = useState(produto?.nome || '');
+  const [categoria, setCategoria] = useState(produto?.categoria || 'Diversos');
+  const [imagemUrl, setImagemUrl] = useState(produto?.imagem_url || '');
+  const [descricao, setDescricao] = useState(produto?.descricao || '');
   const [precoCusto, setPrecoCusto] = useState(toInputNum(produto?.preco_custo));
   const [precoVenda, setPrecoVenda] = useState(toInputNum(produto?.preco_venda));
   const [estoque, setEstoque] = useState(produto?.estoque_atual !== undefined && produto?.estoque_atual !== null ? String(produto.estoque_atual) : '');
@@ -207,7 +210,16 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
       const res = await fetch(produto ? `${api}/admin/produtos/${produto.id}` : `${api}/admin/produtos`, {
         method: produto ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ ean, nome, preco_custo: custoN, preco_venda: vendaN, estoque_atual: estoqueN })
+        body: JSON.stringify({
+          ean,
+          nome,
+          categoria: categoria.trim() || 'Diversos',
+          imagem_url: imagemUrl.trim(),
+          descricao: descricao.trim(),
+          preco_custo: custoN,
+          preco_venda: vendaN,
+          estoque_atual: estoqueN
+        })
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -232,16 +244,56 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
         <h3>{produto ? 'Editar Produto' : 'Novo Produto'}</h3>
-        <div className="field">
-          <label className="label">Código de Barras (EAN)</label>
-          <input id="prod-ean" className="input" value={ean} onChange={e => setEan(e.target.value)} onKeyDown={onEnter} />
+        
+        {imagemUrl && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, padding: 10, borderRadius: 10, background: 'var(--bg-surface-2)', border: '1px solid var(--border)' }}>
+            <img src={imagemUrl} alt="Preview" style={{ width: 50, height: 50, borderRadius: 8, objectFit: 'cover' }} onError={(e) => (e.currentTarget.style.display = 'none')} />
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Imagem carregada do catálogo</div>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="field">
+            <label className="label">Código de Barras (EAN / SKU)</label>
+            <input id="prod-ean" className="input" value={ean} onChange={e => setEan(e.target.value)} onKeyDown={onEnter} placeholder="789... ou código" />
+          </div>
+          <div className="field">
+            <label className="label">Categoria</label>
+            <select className="catalog-select" style={{ width: '100%', height: 42 }} value={categoria} onChange={e => setCategoria(e.target.value)}>
+              <option value="Tabacaria">Tabacaria</option>
+              <option value="Bebidas">Bebidas</option>
+              <option value="Bomboniere">Bomboniere</option>
+              <option value="Tailandia Grill">Tailandia Grill</option>
+              <option value="Alimentos">Alimentos</option>
+              <option value="Diversos">Diversos</option>
+              <option value="taxa/entrega">Taxa / Entrega</option>
+            </select>
+          </div>
         </div>
+
         <div className="field">
           <label className="label">Nome do Produto</label>
           <input id="prod-nome" className="input" value={nome} onChange={e => setNome(e.target.value)} onKeyDown={onEnter} />
         </div>
+
+        <div className="field">
+          <label className="label">URL da Imagem (opcional)</label>
+          <input className="input" value={imagemUrl} onChange={e => setImagemUrl(e.target.value)} placeholder="https://admtai.com/wp-content/uploads/..." />
+        </div>
+
+        <div className="field">
+          <label className="label">Descrição do Produto (opcional)</label>
+          <textarea
+            className="input"
+            style={{ height: 60, resize: 'vertical' }}
+            value={descricao}
+            onChange={e => setDescricao(e.target.value)}
+            placeholder="Detalhes, especificações ou observações do produto..."
+          />
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div className="field">
             <label className="label">Preço de Custo (R$)</label>
@@ -252,17 +304,20 @@ function ModalProduto({ produto, onClose, onSaved }: any) {
             <input id="prod-venda" className="input" inputMode="decimal" placeholder="0,00" value={precoVenda} onChange={e => setPrecoVenda(e.target.value)} onKeyDown={onEnter} />
           </div>
         </div>
+
         {Number.isFinite(margem) && (
           <div className={`hint ${margem >= 0 ? 'green' : 'red'}`} style={{ marginTop: -6, marginBottom: 12 }}>
             Margem: {pct(margem)} • Lucro por unidade: {brl(vendaN - custoN)}
           </div>
         )}
+
         <div className="field">
           <label className="label">{produto ? 'Quantidade em Estoque' : 'Estoque Inicial (entrada)'}</label>
           <input id="prod-estoque" className="input" type="number" min="0" value={estoque} onChange={e => setEstoque(e.target.value)} onKeyDown={onEnter} />
           {diffEstoque > 0 && <div className="hint green">+{int(diffEstoque)} un. serão registradas como {produto ? 'reposição' : 'entrada'} • investimento de {brl(diffEstoque * custoN)}</div>}
           {diffEstoque < 0 && <div className="hint red">{int(diffEstoque)} un. serão registradas como ajuste/perda de estoque</div>}
         </div>
+
         <div className="modal-actions">
           <button onClick={onClose} disabled={salvando} className="btn btn-ghost">Cancelar</button>
           <button id="prod-salvar" onClick={handleSave} disabled={salvando} className="btn btn-primary">{salvando ? 'Salvando...' : 'Salvar Produto'}</button>
@@ -1001,6 +1056,9 @@ export default function App() {
   const [periodoVendas, setPeriodoVendas] = useState('');
   const [vendaAberta, setVendaAberta] = useState<number | null>(null);
   const [filtroMov, setFiltroMov] = useState('TODOS');
+  const [buscaProduto, setBuscaProduto] = useState('');
+  const [categoriaProduto, setCategoriaProduto] = useState('TODAS');
+  const [paginaProduto, setPaginaProduto] = useState(1);
 
   const [modalProduto, setModalProduto] = useState<any>({ open: false, data: null });
   const [modalFuncionario, setModalFuncionario] = useState<any>({ open: false, data: null });
@@ -1021,21 +1079,31 @@ export default function App() {
     const headers = { 'Authorization': `Bearer ${token}` };
     const api = getApiUrl();
     try {
-      const resP = await fetch(`${api}/admin/produtos`, { headers });
+      const resP = await fetch(`${api}/admin/produtos?t=${Date.now()}`, { headers, cache: 'no-store' });
       if (resP.status === 401) { handleLogout(); return; }
 
       const [dP, dF, dV] = await Promise.all([
         resP.json(),
-        fetch(`${api}/admin/funcionarios`, { headers }).then(r => r.json()),
-        fetch(`${api}/admin/vendas`, { headers }).then(r => r.json())
+        fetch(`${api}/admin/funcionarios?t=${Date.now()}`, { headers, cache: 'no-store' }).then(r => r.json()),
+        fetch(`${api}/admin/vendas?t=${Date.now()}`, { headers, cache: 'no-store' }).then(r => r.json())
       ]);
 
       if (Array.isArray(dP)) setProdutos(dP);
       if (Array.isArray(dF)) setFuncionarios(dF);
       if (Array.isArray(dV)) {
-        // Aplica overrides de status salvos localmente caso o backend ainda não tenha propagado
+        // Busca overrides sincronizados compartilhados com o PDV
+        let syncOverrides: Record<string, any> = {};
+        try {
+          const sRes = await fetch(`/api/sync-overrides?t=${Date.now()}`, { cache: 'no-store' });
+          if (sRes.ok) {
+            syncOverrides = await sRes.json();
+          }
+        } catch {}
+
         const overridesRaw = localStorage.getItem('vendas_status_override');
-        const overrides: Record<string, any> = overridesRaw ? JSON.parse(overridesRaw) : {};
+        const localOverrides: Record<string, any> = overridesRaw ? JSON.parse(overridesRaw) : {};
+        const overrides = { ...localOverrides, ...syncOverrides };
+
         const dVMesclado = dV.map((v: any) => {
           if (overrides[v.id]) {
             return { ...v, ...overrides[v.id] };
@@ -1053,9 +1121,10 @@ export default function App() {
     const headers = { 'Authorization': `Bearer ${token}` };
     const api = getApiUrl();
     try {
+      const qsMetricas = `${periodo ? `&dias=${periodo}` : ''}`;
       const [dM, dMov] = await Promise.all([
-        fetch(`${api}/admin/metricas/produtos${periodo ? `?dias=${periodo}` : ''}`, { headers }).then(r => r.json()).catch(() => null),
-        fetch(`${api}/admin/movimentacoes`, { headers }).then(r => r.json()).catch(() => null),
+        fetch(`${api}/admin/metricas/produtos?t=${Date.now()}${qsMetricas}`, { headers, cache: 'no-store' }).then(r => r.json()).catch(() => null),
+        fetch(`${api}/admin/movimentacoes?t=${Date.now()}`, { headers, cache: 'no-store' }).then(r => r.json()).catch(() => null),
       ]);
       if (Array.isArray(dM)) setMetricas(dM);
       if (Array.isArray(dMov)) setMovimentacoes(dMov);
@@ -1099,12 +1168,19 @@ export default function App() {
     setAdminName(nome);
   };
 
-  const salvarStatusOverride = (vendaId: number, status: string, extraData: any = {}) => {
+  const salvarStatusOverride = async (vendaId: number, status: string, extraData: any = {}) => {
     try {
       const overridesRaw = localStorage.getItem('vendas_status_override');
       const overrides = overridesRaw ? JSON.parse(overridesRaw) : {};
       overrides[vendaId] = { status, ...extraData };
       localStorage.setItem('vendas_status_override', JSON.stringify(overrides));
+
+      // Sincroniza com o arquivo compartilhado do sistema para o PDV enxergar instantaneamente
+      await fetch('/api/sync-overrides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendaId, status, extraData })
+      }).catch(() => {});
     } catch { /* ignora */ }
   };
 
@@ -1201,6 +1277,33 @@ export default function App() {
     produtos.forEach(p => map.set(String(p.ean), p));
     return map;
   }, [produtos]);
+
+  // Filtro e paginação do catálogo de produtos
+  const categoriasDisponiveis = useMemo(() => {
+    const s = new Set<string>();
+    produtos.forEach((p: any) => { if (p.categoria) s.add(p.categoria); });
+    return ['TODAS', ...Array.from(s).sort()];
+  }, [produtos]);
+
+  const produtosFiltrados = useMemo(() => {
+    const termo = buscaProduto.trim().toLowerCase();
+    return produtos.filter((p: any) => {
+      const matchCat = categoriaProduto === 'TODAS' || p.categoria === categoriaProduto;
+      if (!matchCat) return false;
+      if (!termo) return true;
+      const nome = (p.nome || '').toLowerCase();
+      const ean = (p.ean || '').toLowerCase();
+      const cat = (p.categoria || '').toLowerCase();
+      return nome.includes(termo) || ean.includes(termo) || cat.includes(termo);
+    });
+  }, [produtos, buscaProduto, categoriaProduto]);
+
+  const ITENS_POR_PAGINA = 50;
+  const totalPaginasProdutos = Math.ceil(produtosFiltrados.length / ITENS_POR_PAGINA) || 1;
+  const produtosPaginados = useMemo(() => {
+    const inicio = (paginaProduto - 1) * ITENS_POR_PAGINA;
+    return produtosFiltrados.slice(inicio, inicio + ITENS_POR_PAGINA);
+  }, [produtosFiltrados, paginaProduto]);
 
   // Métricas de produtos: usa as da API se vierem do backend, ou computa de forma redundante das vendas e produtos
   const metricasComputadas = useMemo(() => {
@@ -1682,36 +1785,146 @@ export default function App() {
             <div>
               <div className="page-header">
                 <div>
-                  <h1 className="page-title">Produtos e Estoque</h1>
-                  <p className="page-sub">Todo cadastro e aumento de estoque é registrado como entrada de mercadoria</p>
+                  <h1 className="page-title">Produtos e Estoque ({int(produtos.length)} itens)</h1>
+                  <p className="page-sub">Catálogo completo com fotos, categorias e controle de estoque do sistema</p>
                 </div>
                 <button id="btn-novo-produto" onClick={() => setModalProduto({ open: true, data: null })} className="btn btn-primary">+ Novo Produto</button>
               </div>
+
+              {/* BARRA DE BUSCA E FILTROS */}
+              <div className="catalog-filter-bar">
+                <div className="catalog-search-wrap">
+                  <Search size={16} className="search-icon" />
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Buscar por nome, código EAN/SKU ou categoria..."
+                    value={buscaProduto}
+                    onChange={(e) => {
+                      setBuscaProduto(e.target.value);
+                      setPaginaProduto(1);
+                    }}
+                  />
+                </div>
+                <select
+                  className="catalog-select"
+                  value={categoriaProduto}
+                  onChange={(e) => {
+                    setCategoriaProduto(e.target.value);
+                    setPaginaProduto(1);
+                  }}
+                >
+                  {categoriasDisponiveis.map(cat => (
+                    <option key={cat} value={cat}>
+                      {cat === 'TODAS' ? '📁 Todas as Categorias' : `🏷️ ${cat}`}
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {int(produtosFiltrados.length)} encontrados
+                </span>
+              </div>
+
               <section className="table-wrap fade-up">
                 <div className="table-scroll">
                   <table className="tbl">
                     <thead>
-                      <tr><th>EAN</th><th>Nome do Produto</th><th className="right">Custo</th><th className="right">Venda</th><th className="right">Margem</th><th className="right">Estoque</th><th className="right">Ações</th></tr>
+                      <tr>
+                        <th style={{ width: 50 }}>Foto</th>
+                        <th>Produto</th>
+                        <th>EAN / SKU</th>
+                        <th className="right">Custo</th>
+                        <th className="right">Venda</th>
+                        <th className="right">Margem</th>
+                        <th className="right">Estoque</th>
+                        <th className="right">Ações</th>
+                      </tr>
                     </thead>
                     <tbody>
-                      {produtos.map((p: any, i: number) => {
+                      {produtosPaginados.map((p: any, i: number) => {
                         const venda = Number(p.preco_venda), custo = Number(p.preco_custo || 0);
                         const margem = venda > 0 ? ((venda - custo) / venda) * 100 : 0;
                         return (
                           <tr key={p.id} className="row" style={{ animationDelay: `${Math.min(i, 15) * 20}ms` }}>
+                            <td>
+                              {p.imagem_url ? (
+                                <img
+                                  src={p.imagem_url}
+                                  alt=""
+                                  className="prod-thumb"
+                                  onError={(e) => (e.currentTarget.style.display = 'none')}
+                                />
+                              ) : (
+                                <div className="prod-thumb-placeholder">
+                                  {p.nome ? p.nome.slice(0, 2).toUpperCase() : '📦'}
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                <span className="strong">{p.nome}</span>
+                                {p.categoria && (
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                    <span className="badge gray" style={{ padding: '1px 6px', fontSize: '0.68rem' }}>{p.categoria}</span>
+                                    {p.subcategoria && <span style={{ marginLeft: 6 }}>{p.subcategoria}</span>}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
                             <td className="prod-ean">{p.ean}</td>
-                            <td className="strong">{p.nome}</td>
                             <td className="right num">{brl(custo)}</td>
                             <td className="right num strong">{brl(venda)}</td>
-                            <td className="right"><span className={`badge ${custo === 0 ? 'gray' : margem >= 30 ? 'green' : margem >= 10 ? 'amber' : 'red'}`}>{custo === 0 ? 'sem custo' : pct(margem)}</span></td>
-                            <td className="right"><span className={`badge ${p.estoque_atual >= 10 ? 'green' : 'red'}`}>{int(p.estoque_atual)} un.</span></td>
-                            <td className="right"><button onClick={() => setModalProduto({ open: true, data: p })} className="btn btn-ghost btn-sm">Editar</button></td>
+                            <td className="right">
+                              <span className={`badge ${custo === 0 ? 'gray' : margem >= 30 ? 'green' : margem >= 10 ? 'amber' : 'red'}`}>
+                                {custo === 0 ? 'sem custo' : pct(margem)}
+                              </span>
+                            </td>
+                            <td className="right">
+                              <span className={`badge ${p.estoque_atual >= 10 ? 'green' : p.estoque_atual > 0 ? 'amber' : 'red'}`}>
+                                {int(p.estoque_atual)} un.
+                              </span>
+                            </td>
+                            <td className="right">
+                              <button onClick={() => setModalProduto({ open: true, data: p })} className="btn btn-ghost btn-sm">Editar</button>
+                            </td>
                           </tr>
                         );
                       })}
+                      {produtosPaginados.length === 0 && (
+                        <tr>
+                          <td colSpan={8} style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)' }}>
+                            Nenhum produto encontrado com os filtros selecionados.
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
+
+                {/* PAGINAÇÃO */}
+                {totalPaginasProdutos > 1 && (
+                  <div className="pagination-bar">
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                      Página {paginaProduto} de {totalPaginasProdutos} ({int(produtosFiltrados.length)} produtos)
+                    </span>
+                    <div className="pagination-controls">
+                      <button
+                        className="pagination-btn"
+                        disabled={paginaProduto <= 1}
+                        onClick={() => setPaginaProduto(prev => Math.max(1, prev - 1))}
+                      >
+                        Anterior
+                      </button>
+                      <button
+                        className="pagination-btn"
+                        disabled={paginaProduto >= totalPaginasProdutos}
+                        onClick={() => setPaginaProduto(prev => Math.min(totalPaginasProdutos, prev + 1))}
+                      >
+                        Próxima
+                      </button>
+                    </div>
+                  </div>
+                )}
               </section>
             </div>
           )}
