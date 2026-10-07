@@ -180,148 +180,519 @@ function LoginScreen({ onLogin, tema, onToggleTema }: { onLogin: (nome: string) 
 }
 
 // ==========================================
-// MODAL PRODUTO (cadastro = entrada de mercadoria)
+// MODAL PRODUTO (ALINHADO AO LAYOUT TAILÂNDIA / CSV REAL)
 // ==========================================
 function ModalProduto({ produto, onClose, onSaved }: any) {
-  const [ean, setEan] = useState(produto?.ean || '');
+  const [tabAtiva, setTabAtiva] = useState<'NOVO' | 'ESTOQUE' | 'EDITAR'>(produto ? 'EDITAR' : 'NOVO');
+  const [loja, setLoja] = useState('Loja 1 - Taguatinga Norte (Matriz)');
+  const [tipoProduto, setTipoProduto] = useState('Simples');
+
   const [nome, setNome] = useState(produto?.nome || '');
-  const [categoria, setCategoria] = useState(produto?.categoria || 'Diversos');
-  const [imagemUrl, setImagemUrl] = useState(produto?.imagem_url || '');
-  const [descricao, setDescricao] = useState(produto?.descricao || '');
+  const [ean, setEan] = useState(produto?.ean || '');
+  const [sku, setSku] = useState(produto?.sku || (produto?.ean ? `SKU-${produto.ean}` : ''));
+  
   const [precoCusto, setPrecoCusto] = useState(toInputNum(produto?.preco_custo));
   const [precoVenda, setPrecoVenda] = useState(toInputNum(produto?.preco_venda));
-  const [estoque, setEstoque] = useState(produto?.estoque_atual !== undefined && produto?.estoque_atual !== null ? String(produto.estoque_atual) : '');
+  const [precoPromocional, setPrecoPromocional] = useState(toInputNum(produto?.preco_promocional));
+
+  const [estoque, setEstoque] = useState(
+    produto?.estoque_atual !== undefined && produto?.estoque_atual !== null
+      ? String(produto.estoque_atual)
+      : '0'
+  );
+  const [estoqueMinimo, setEstoqueMinimo] = useState(produto?.estoque_minimo ? String(produto.estoque_minimo) : '5');
+  const [unidadeMedida, setUnidadeMedida] = useState(produto?.unidade_medida || 'UN');
+
+  const [imagemUrl, setImagemUrl] = useState(produto?.imagem_url || '');
+  const [descricaoCurta, setDescricaoCurta] = useState(produto?.descricao || '');
+  const [descricaoCompleta, setDescricaoCompleta] = useState(produto?.descricao_completa || produto?.descricao || '');
+
+  // Categorias disponíveis no checklist
+  const LISTA_CATEGORIAS = [
+    'Alimentos',
+    'Happy hour',
+    'Tailandia Grill',
+    'taxa/entrega',
+    'Sem categoria',
+    'Bebidas',
+    'Cervejas',
+    'Destilados',
+    'Combos',
+    'Bomboniere',
+    'Tabacaria',
+    'Diversos',
+    'Carregadores',
+    'Copos',
+    'Essências',
+    'Sedas & Filtros',
+    'Gelo & Carvão',
+  ];
+
+  const [categoriasSelecionadas, setCategoriasSelecionadas] = useState<string[]>(() => {
+    if (produto?.categoria) {
+      return [produto.categoria];
+    }
+    return ['Bebidas'];
+  });
+
+  const [tags, setTags] = useState(produto?.tags ? (Array.isArray(produto.tags) ? produto.tags.join(', ') : produto.tags) : '');
+  const [ativo, setAtivo] = useState(produto?.ativo !== false);
+  const [destaqueHome, setDestaqueHome] = useState(Boolean(produto?.destaque_home));
+  const [deliveryOnline, setDeliveryOnline] = useState(produto?.delivery_online !== false);
+  const [seloEspecial, setSeloEspecial] = useState(produto?.selo_especial || '');
+
   const [salvando, setSalvando] = useState(false);
+  const [toast, setToast] = useState<{ tipo: 'success' | 'error'; msg: string } | null>(null);
 
   const custoN = parseNum(precoCusto) || 0;
-  const vendaN = parseNum(precoVenda);
+  const vendaN = parseNum(precoVenda) || 0;
+  const promoN = parseNum(precoPromocional) || 0;
   const estoqueN = parseInt(estoque, 10);
-  const margem = vendaN > 0 ? ((vendaN - custoN) / vendaN) * 100 : NaN;
+  const lucro = vendaN - custoN;
+  const margem = vendaN > 0 ? (lucro / vendaN) * 100 : NaN;
   const diffEstoque = Number.isFinite(estoqueN) ? estoqueN - (produto ? Number(produto.estoque_atual) : 0) : 0;
 
+  const toggleCategoria = (cat: string) => {
+    setCategoriasSelecionadas(prev =>
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+    );
+  };
+
+  const showFeedback = (tipo: 'success' | 'error', msg: string) => {
+    setToast({ tipo, msg });
+    setTimeout(() => setToast(null), 3500);
+  };
+
   const handleSave = async () => {
-    if (!ean || !nome || !Number.isFinite(vendaN) || !Number.isFinite(estoqueN)) {
-      return alert('Preencha os campos obrigatórios (EAN, Nome, Preço de Venda e Estoque).');
+    if (!nome.trim()) {
+      showFeedback('error', 'O Título do Produto é obrigatório.');
+      return;
     }
+    if (!ean.trim()) {
+      showFeedback('error', 'O Código de Barras / EAN é obrigatório.');
+      return;
+    }
+    if (!Number.isFinite(vendaN) || vendaN <= 0) {
+      showFeedback('error', 'Informe um Preço de Venda válido.');
+      return;
+    }
+    if (!Number.isFinite(estoqueN)) {
+      showFeedback('error', 'Informe a quantidade de Estoque.');
+      return;
+    }
+
     const token = localStorage.getItem('adm_token');
     const api = getApiUrl();
     setSalvando(true);
+
+    const categoriaPrincipal = categoriasSelecionadas[0] || 'Diversos';
+    const subcategoriaPrincipal = categoriasSelecionadas.length > 1 ? categoriasSelecionadas[1] : '';
+
     try {
       const res = await fetch(produto ? `${api}/admin/produtos/${produto.id}` : `${api}/admin/produtos`, {
         method: produto ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          ean,
-          nome,
-          categoria: categoria.trim() || 'Diversos',
+          ean: ean.trim(),
+          sku: sku.trim() || ean.trim(),
+          nome: nome.trim(),
+          categoria: categoriaPrincipal,
+          subcategoria: subcategoriaPrincipal,
           imagem_url: imagemUrl.trim(),
-          descricao: descricao.trim(),
+          descricao: descricaoCurta.trim() || descricaoCompleta.trim(),
           preco_custo: custoN,
           preco_venda: vendaN,
-          estoque_atual: estoqueN
+          preco_promocional: promoN > 0 ? promoN : null,
+          estoque_atual: estoqueN,
+          unidade_medida: unidadeMedida,
+          ativo: ativo,
+          tags: tags.split(',').map((t: string) => t.trim()).filter(Boolean),
+          destaque_home: destaqueHome,
+          delivery_online: deliveryOnline,
+          selo_especial: seloEspecial || null
         })
       });
+
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        alert(errData.error || 'Erro ao salvar o produto no servidor.');
+        showFeedback('error', errData.error || 'Erro ao salvar o produto no servidor.');
+        setSalvando(false);
         return;
       }
-      onSaved();
-      onClose();
-    } catch {
-      alert('Erro de comunicação com o servidor da API.');
-    } finally {
-      setSalvando(false);
-    }
-  };
 
-  const onEnter = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleSave();
+      showFeedback('success', produto ? 'Produto atualizado com sucesso!' : 'Novo produto cadastrado com sucesso!');
+      setTimeout(() => {
+        onSaved();
+        onClose();
+      }, 700);
+    } catch {
+      showFeedback('error', 'Falha na conexão com a API do servidor.');
+      setSalvando(false);
     }
   };
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
-        <h3>{produto ? 'Editar Produto' : 'Novo Produto'}</h3>
+      <div className="modal modal-prod-custom" onClick={e => e.stopPropagation()}>
         
-        {imagemUrl && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, padding: 10, borderRadius: 10, background: 'var(--bg-surface-2)', border: '1px solid var(--border)' }}>
-            <img src={imagemUrl} alt="Preview" style={{ width: 50, height: 50, borderRadius: 8, objectFit: 'cover' }} onError={(e) => (e.currentTarget.style.display = 'none')} />
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Imagem carregada do catálogo</div>
-          </div>
-        )}
+        {/* Barra Superior de Abas (estilo Hostinger / WordPress) */}
+        <div className="form-top-tabs">
+          <button
+            type="button"
+            onClick={() => setTabAtiva('NOVO')}
+            className={`form-tab-btn ${tabAtiva === 'NOVO' ? 'active-green' : ''}`}
+          >
+            <span>+</span> Novo Produto
+          </button>
+          <button
+            type="button"
+            onClick={() => setTabAtiva('ESTOQUE')}
+            className={`form-tab-btn ${tabAtiva === 'ESTOQUE' ? 'active-blue' : ''}`}
+          >
+            <span>🔄</span> Atualizar Estoque
+          </button>
+          <button
+            type="button"
+            onClick={() => setTabAtiva('EDITAR')}
+            className={`form-tab-btn ${tabAtiva === 'EDITAR' ? 'active-amber' : ''}`}
+          >
+            <span>✏️</span> Editar Produto
+          </button>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div className="field">
-            <label className="label">Código de Barras (EAN / SKU)</label>
-            <input id="prod-ean" className="input" value={ean} onChange={e => setEan(e.target.value)} onKeyDown={onEnter} placeholder="789... ou código" />
+          <button
+            onClick={onClose}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.2rem' }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Loja * */}
+        <div className="field-dark">
+          <label>🏪 Loja *</label>
+          <select
+            className="input-dark"
+            value={loja}
+            onChange={e => setLoja(e.target.value)}
+          >
+            <option value="Loja 1 - Taguatinga Norte (Matriz)">Loja 1 - Taguatinga Norte (Matriz)</option>
+            <option value="Loja 2 - Taguatinga Sul">Loja 2 - Taguatinga Sul</option>
+            <option value="Todas as Unidades">Todas as Unidades</option>
+          </select>
+        </div>
+
+        {/* Título do Produto & Tipo de Produto */}
+        <div className="form-grid-2">
+          <div className="field-dark">
+            <label>📝 Título do Produto *</label>
+            <input
+              id="prod-nome"
+              className="input-dark"
+              value={nome}
+              onChange={e => setNome(e.target.value)}
+              placeholder="ex: Whisky Ballantines 12 Anos 1L"
+            />
           </div>
-          <div className="field">
-            <label className="label">Categoria</label>
-            <select className="catalog-select" style={{ width: '100%', height: 42 }} value={categoria} onChange={e => setCategoria(e.target.value)}>
-              <option value="Tabacaria">Tabacaria</option>
-              <option value="Bebidas">Bebidas</option>
-              <option value="Bomboniere">Bomboniere</option>
-              <option value="Tailandia Grill">Tailandia Grill</option>
-              <option value="Alimentos">Alimentos</option>
-              <option value="Diversos">Diversos</option>
-              <option value="taxa/entrega">Taxa / Entrega</option>
+          <div className="field-dark">
+            <label>📦 Tipo de Produto *</label>
+            <select
+              className="input-dark"
+              value={tipoProduto}
+              onChange={e => setTipoProduto(e.target.value)}
+            >
+              <option value="Simples">📦 Simples</option>
+              <option value="Combo">🔥 Combo / Kit Promocional</option>
+              <option value="Variável">✨ Variável</option>
             </select>
           </div>
         </div>
 
-        <div className="field">
-          <label className="label">Nome do Produto</label>
-          <input id="prod-nome" className="input" value={nome} onChange={e => setNome(e.target.value)} onKeyDown={onEnter} />
-        </div>
-
-        <div className="field">
-          <label className="label">URL da Imagem (opcional)</label>
-          <input className="input" value={imagemUrl} onChange={e => setImagemUrl(e.target.value)} placeholder="https://admtai.com/wp-content/uploads/..." />
-        </div>
-
-        <div className="field">
-          <label className="label">Descrição do Produto (opcional)</label>
-          <textarea
-            className="input"
-            style={{ height: 60, resize: 'vertical' }}
-            value={descricao}
-            onChange={e => setDescricao(e.target.value)}
-            placeholder="Detalhes, especificações ou observações do produto..."
-          />
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div className="field">
-            <label className="label">Preço de Custo (R$)</label>
-            <input id="prod-custo" className="input" inputMode="decimal" placeholder="0,00" value={precoCusto} onChange={e => setPrecoCusto(e.target.value)} onKeyDown={onEnter} />
+        {/* Preços e Margem */}
+        <div className="form-grid-3">
+          <div className="field-dark">
+            <label>💰 Preço de Venda *</label>
+            <input
+              id="prod-venda"
+              className="input-dark"
+              inputMode="decimal"
+              placeholder="0,00"
+              value={precoVenda}
+              onChange={e => setPrecoVenda(e.target.value)}
+            />
           </div>
-          <div className="field">
-            <label className="label">Preço de Venda (R$)</label>
-            <input id="prod-venda" className="input" inputMode="decimal" placeholder="0,00" value={precoVenda} onChange={e => setPrecoVenda(e.target.value)} onKeyDown={onEnter} />
+          <div className="field-dark">
+            <label>📊 Preço de Custo</label>
+            <input
+              id="prod-custo"
+              className="input-dark"
+              inputMode="decimal"
+              placeholder="0,00"
+              value={precoCusto}
+              onChange={e => setPrecoCusto(e.target.value)}
+            />
+          </div>
+          <div className="field-dark">
+            <label>🏷️ Preço Promocional</label>
+            <input
+              className="input-dark"
+              inputMode="decimal"
+              placeholder="0,00 (opcional)"
+              value={precoPromocional}
+              onChange={e => setPrecoPromocional(e.target.value)}
+            />
           </div>
         </div>
 
-        {Number.isFinite(margem) && (
-          <div className={`hint ${margem >= 0 ? 'green' : 'red'}`} style={{ marginTop: -6, marginBottom: 12 }}>
-            Margem: {pct(margem)} • Lucro por unidade: {brl(vendaN - custoN)}
+        {/* Margem calculada em tempo real */}
+        {Number.isFinite(margem) && vendaN > 0 && (
+          <div
+            style={{
+              marginTop: -6,
+              marginBottom: 14,
+              padding: '6px 12px',
+              borderRadius: 8,
+              background: margem >= 20 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+              border: `1px solid ${margem >= 20 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              color: margem >= 20 ? '#4ade80' : '#f87171'
+            }}
+          >
+            Margem Líquida: {pct(margem)} • Lucro por Unidade: {brl(lucro)}
+            {promoN > 0 && ` • Preço em Oferta: ${brl(promoN)}`}
           </div>
         )}
 
-        <div className="field">
-          <label className="label">{produto ? 'Quantidade em Estoque' : 'Estoque Inicial (entrada)'}</label>
-          <input id="prod-estoque" className="input" type="number" min="0" value={estoque} onChange={e => setEstoque(e.target.value)} onKeyDown={onEnter} />
-          {diffEstoque > 0 && <div className="hint green">+{int(diffEstoque)} un. serão registradas como {produto ? 'reposição' : 'entrada'} • investimento de {brl(diffEstoque * custoN)}</div>}
-          {diffEstoque < 0 && <div className="hint red">{int(diffEstoque)} un. serão registradas como ajuste/perda de estoque</div>}
+        {/* SKU e Código de Barras */}
+        <div className="form-grid-2">
+          <div className="field-dark">
+            <label>🔢 SKU (Código Interno)</label>
+            <input
+              className="input-dark"
+              value={sku}
+              onChange={e => setSku(e.target.value)}
+              placeholder="Código único do produto (ex: TAI-1029)"
+            />
+          </div>
+          <div className="field-dark">
+            <label>📊 Código de Barras (EAN) *</label>
+            <input
+              id="prod-ean"
+              className="input-dark"
+              value={ean}
+              onChange={e => setEan(e.target.value)}
+              placeholder="789... (13 dígitos)"
+            />
+          </div>
         </div>
 
-        <div className="modal-actions">
-          <button onClick={onClose} disabled={salvando} className="btn btn-ghost">Cancelar</button>
-          <button id="prod-salvar" onClick={handleSave} disabled={salvando} className="btn btn-primary">{salvando ? 'Salvando...' : 'Salvar Produto'}</button>
+        {/* Estoque e Unidade */}
+        <div className="form-grid-3">
+          <div className="field-dark">
+            <label>📦 {produto ? 'Quantidade em Estoque' : 'Estoque Inicial *'}</label>
+            <input
+              id="prod-estoque"
+              className="input-dark"
+              type="number"
+              min="0"
+              value={estoque}
+              onChange={e => setEstoque(e.target.value)}
+            />
+            {diffEstoque !== 0 && (
+              <div style={{ fontSize: '0.72rem', color: diffEstoque > 0 ? '#4ade80' : '#f87171', marginTop: 4 }}>
+                {diffEstoque > 0 ? `+${diffEstoque} unidades adicionadas` : `${diffEstoque} unidades removidas`}
+              </div>
+            )}
+          </div>
+          <div className="field-dark">
+            <label>⚠️ Estoque Mínimo (Alerta)</label>
+            <input
+              className="input-dark"
+              type="number"
+              min="0"
+              value={estoqueMinimo}
+              onChange={e => setEstoqueMinimo(e.target.value)}
+            />
+          </div>
+          <div className="field-dark">
+            <label>📏 Unidade de Medida</label>
+            <select
+              className="input-dark"
+              value={unidadeMedida}
+              onChange={e => setUnidadeMedida(e.target.value)}
+            >
+              <option value="UN">UN (Unidade)</option>
+              <option value="Lata">Lata</option>
+              <option value="Garrafa">Garrafa</option>
+              <option value="Fardo">Fardo</option>
+              <option value="Caixa">Caixa</option>
+              <option value="Maço">Maço</option>
+              <option value="Pacote">Pacote</option>
+            </select>
+          </div>
         </div>
+
+        {/* Imagem do Produto */}
+        <div className="field-dark">
+          <label>🖼️ Imagem do Produto</label>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            {imagemUrl ? (
+              <div style={{ width: 64, height: 64, borderRadius: 8, overflow: 'hidden', background: '#080d1a', border: '1px solid #1e2d4a', flexShrink: 0 }}>
+                <img
+                  src={imagemUrl}
+                  alt="Preview"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  onError={e => (e.currentTarget.style.display = 'none')}
+                />
+              </div>
+            ) : (
+              <div style={{ width: 64, height: 64, borderRadius: 8, background: '#080d1a', border: '1px dashed #1e2d4a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '0.72rem', flexShrink: 0 }}>
+                Sem foto
+              </div>
+            )}
+            <input
+              className="input-dark"
+              style={{ flex: 1 }}
+              value={imagemUrl}
+              onChange={e => setImagemUrl(e.target.value)}
+              placeholder="Cole a URL da imagem (ex: https://admtai.com/wp-content/uploads/...)"
+            />
+          </div>
+        </div>
+
+        {/* Descrição Curta */}
+        <div className="field-dark">
+          <label>📝 Descrição Curta</label>
+          <textarea
+            className="input-dark"
+            style={{ height: 50, resize: 'vertical' }}
+            value={descricaoCurta}
+            onChange={e => setDescricaoCurta(e.target.value)}
+            placeholder="Breve resumo para os cards da loja virtual..."
+          />
+        </div>
+
+        {/* Descrição Completa */}
+        <div className="field-dark">
+          <label>📄 Descrição Completa</label>
+          <textarea
+            className="input-dark"
+            style={{ height: 75, resize: 'vertical' }}
+            value={descricaoCompleta}
+            onChange={e => setDescricaoCompleta(e.target.value)}
+            placeholder="Descrição detalhada do produto, modo de consumo, acompanhamentos..."
+          />
+        </div>
+
+        {/* Categorias & Tags (2 Colunas) */}
+        <div className="form-grid-2">
+          {/* Coluna Categorias Checklist */}
+          <div className="field-dark">
+            <label>🏷️ Categorias</label>
+            <div className="checklist-container">
+              {LISTA_CATEGORIAS.map(cat => (
+                <label key={cat} className="checklist-item">
+                  <input
+                    type="checkbox"
+                    checked={categoriasSelecionadas.includes(cat)}
+                    onChange={() => toggleCategoria(cat)}
+                  />
+                  <span>{cat}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Coluna Tags e Opções de Exibição */}
+          <div className="field-dark">
+            <label>🏷️ Tags (separadas por vírgula)</label>
+            <input
+              className="input-dark"
+              value={tags}
+              onChange={e => setTags(e.target.value)}
+              placeholder="tag1, tag2, tag3"
+              style={{ marginBottom: 12 }}
+            />
+
+            <label>✨ Selo Especial</label>
+            <select
+              className="input-dark"
+              value={seloEspecial}
+              onChange={e => setSeloEspecial(e.target.value)}
+              style={{ marginBottom: 12 }}
+            >
+              <option value="">Nenhum</option>
+              <option value="Gelada">❄️ Gelada</option>
+              <option value="Mais Vendido">🔥 Mais Vendido</option>
+              <option value="Combo">📦 Combo</option>
+              <option value="Promoção">🏷️ Promoção</option>
+              <option value="Novidade">✨ Novidade</option>
+            </select>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.8rem', color: '#cbd5e1' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={ativo}
+                  onChange={e => setAtivo(e.target.checked)}
+                  style={{ accentColor: '#22c55e', width: 15, height: 15 }}
+                />
+                Ativo no Catálogo
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={destaqueHome}
+                  onChange={e => setDestaqueHome(e.target.checked)}
+                  style={{ accentColor: '#22c55e', width: 15, height: 15 }}
+                />
+                Destaque na Página Inicial (Home)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={deliveryOnline}
+                  onChange={e => setDeliveryOnline(e.target.checked)}
+                  style={{ accentColor: '#22c55e', width: 15, height: 15 }}
+                />
+                Disponível no Delivery Online
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Rodapé com Botão Verde Estilizado */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #1e2d4a', paddingTop: 16, marginTop: 12 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={salvando}
+            className="btn btn-ghost"
+            style={{ color: '#94a3b8' }}
+          >
+            Cancelar
+          </button>
+
+          <button
+            id="prod-salvar"
+            type="button"
+            onClick={handleSave}
+            disabled={salvando}
+            className="btn-cadastrar-prod"
+          >
+            <span>✅</span>
+            <span>{salvando ? 'Salvando no Banco...' : produto ? 'Salvar Alterações' : 'Cadastrar Produto'}</span>
+          </button>
+        </div>
+
+        {/* Toast Notification */}
+        {toast && (
+          <div className={`toast-floating ${toast.tipo}`}>
+            <span>{toast.tipo === 'success' ? '✅' : '⚠️'}</span>
+            <span>{toast.msg}</span>
+          </div>
+        )}
+
       </div>
     </div>
   );

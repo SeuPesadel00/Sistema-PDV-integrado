@@ -7,5 +7,5 @@ dist-electron/
 .DS_Store
 pg_data/
 vendas_sync.json
-server-local/scripts/
-
+.next/
+*.log
